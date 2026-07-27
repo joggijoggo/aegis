@@ -1,6 +1,6 @@
 """Aegis Framework - Backtrader Broker Adapter Layer.
 
-Implements the outbound port adapter translating pips metrics to absolute prices.
+Implements the outbound port adapter routing absolute bracket orders.
 """
 
 from typing import Any
@@ -37,60 +37,38 @@ class BacktraderBrokerAdapter(AbstractBrokerBridge):
         side: TransactionSide,
         order_type: OrderType,
         volume_lots: float,
-        stop_loss_pips: float | None = None,
-        take_profit_pips: float | None = None
+        stop_loss_price: float,
+        take_profit_price: float
     ) -> dict[str, Any]:
-        """Routes an order request directly to Backtrader matching bracket engines.
+        """Routes an order request directly to Backtrader using absolute prices.
 
         Args:
             symbol (str): Target currency pair tracking identifier.
             side (TransactionSide): Enforced transaction direction enum.
             order_type (OrderType): Enforced execution constraint type enum.
             volume_lots (float): Lot size exposure allocation.
-            stop_loss_pips (float | None): Optional protective stop distance.
-            take_profit_pips (float | None): Optional target limit distance.
+            stop_loss_price (float): Absolute protective stop execution level.
+            take_profit_price (float): Absolute target limit execution level.
 
         Returns:
             dict[str, Any]: Standardized execution receipt parameters.
-
-        Raises:
-            NotImplementedError: If any bracket protection parameter is missing.
-            ValueError: If the target asset symbol is not registered.
         """
-        if stop_loss_pips is None or take_profit_pips is None:
-            raise NotImplementedError(
-                "Aegis Backtrader adapter requires both stop_loss_pips and "
-                "take_profit_pips parameters to enforce strict bracket routing."
-            )
-
-        if symbol not in self._instrument_specs:
-            raise ValueError(
-                f"Asset identity '{symbol}' is missing from instrument registry."
-            )
-
-        # Secure attribute extraction leveraging static dataclass dot notation
-        instrument_spec = self._instrument_specs[symbol]
-        pip_size = instrument_spec.pip_size
-        size_units = int(volume_lots * instrument_spec.lot_size)
-
         entry_price = float(self.strategy.data.close)
+        spec = self.get_instrument_specification(symbol)
+        size_units = int(volume_lots * spec.lot_size)
 
         if side == TransactionSide.LONG:
-            stop_price = entry_price - (stop_loss_pips * pip_size)
-            limit_price = entry_price + (take_profit_pips * pip_size)
             self.strategy.buy_bracket(
                 price=entry_price,
-                stopprice=stop_price,
-                limitprice=limit_price,
+                stopprice=stop_loss_price,
+                limitprice=take_profit_price,
                 size=size_units
             )
         else:
-            stop_price = entry_price + (stop_loss_pips * pip_size)
-            limit_price = entry_price - (take_profit_pips * pip_size)
             self.strategy.sell_bracket(
                 price=entry_price,
-                stopprice=stop_price,
-                limitprice=limit_price,
+                stopprice=stop_loss_price,
+                limitprice=take_profit_price,
                 size=size_units
             )
 
@@ -114,6 +92,26 @@ class BacktraderBrokerAdapter(AbstractBrokerBridge):
             "balance": float(self.strategy.broker.get_cash()),
             "equity": float(self.strategy.broker.get_value())
         }
+
+# -----------------------------------------------------------------------------
+
+    def get_instrument_specification(self, symbol: str) -> InstrumentSpecification:
+        """Fetches contract specifications from the local backtest registry.
+
+        Args:
+            symbol (str): Target financial asset symbol tracking identifier.
+
+        Returns:
+            InstrumentSpecification: Typed immutable contract specifications.
+
+        Raises:
+            ValueError: If the target asset symbol is not registered.
+        """
+        if symbol not in self._instrument_specs:
+            raise ValueError(
+                f"Asset identity '{symbol}' is missing from instrument registry."
+            )
+        return self._instrument_specs[symbol]
 
 # =============================================================================
 # -----------------------------------------------------------------------------

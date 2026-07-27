@@ -4,12 +4,12 @@ Verifies historical indicator warm-up buffers and bracket execution routing.
 """
 
 from datetime import datetime
+from unittest.mock import MagicMock
 from zoneinfo import ZoneInfo
 
 import pytest
 
 from brokers.base_broker import AbstractBrokerBridge
-from core.models import InstrumentSpecification
 from core.models import MarketPricePoint
 from core.models import OrderType
 from core.models import TransactionSide
@@ -25,13 +25,13 @@ class DummyBreakoutBot(AbstractStrategy):
 
     def __init__(self, broker_bridge: AbstractBrokerBridge, warm_up_bars: int):
         """Initializes structural parameters for behavioral verification."""
-        registry = {"EURUSD": InstrumentSpecification(pip_size=0.0001, lot_size=100000)}
         super().__init__(
             broker_bridge=broker_bridge,
-            instrument_specs=registry,
             warm_up_bars=warm_up_bars,
         )
         self.logic_executed = False
+
+# -----------------------------------------------------------------------------
 
     def _on_bar_close(
         self,
@@ -84,19 +84,14 @@ def test_mean_reversion_strategy_execution_flow():
     account = IsolatedAssetAccount(asset_pair="EURUSD", initial_capital=10000.0)
     broker = SimulatedBrokerAdapter(target_account=account)
 
-    registry = {"EURUSD": InstrumentSpecification(pip_size=0.0001, lot_size=100000)}
     bot = AegisMeanReversionBot(
         broker_bridge=broker,
-        instrument_specs=registry,
         warm_up_bars=10,
     )
 
     t1 = datetime(2026, 3, 25, 14, 0, tzinfo=ZoneInfo("UTC"))
-
-    # Generate a robust series of 40 oscillating price parameters to saturate MR
     oscillating_base = [1.00, 0.98, 1.02, 1.00] * 10
 
-    # Apply a target milestone price to trigger execution entry criteria
     p_trigger = MarketPricePoint(
         timestamp=t1, mid_price=1.0250, bid=1.0245, ask=1.0255, current_atr=0.0010
     )
@@ -138,14 +133,11 @@ def test_base_strategy_routes_absolute_prices_for_long_orders():
     account = IsolatedAssetAccount(asset_pair="EURUSD", initial_capital=10000.0)
     broker = SimulatedBrokerAdapter(target_account=account)
 
-    registry = {"EURUSD": InstrumentSpecification(pip_size=0.0001, lot_size=100000)}
     bot = AegisMeanReversionBot(
         broker_bridge=broker,
-        instrument_specs=registry,
         warm_up_bars=10,
     )
 
-    # Manually fire place_bracket_order to traverse the LONG calculation branch
     bot.place_bracket_order(
         symbol="EURUSD",
         side=TransactionSide.LONG,
@@ -165,16 +157,15 @@ def test_base_strategy_routes_absolute_prices_for_long_orders():
 
 def test_base_strategy_raises_value_error_on_unregistered_asset():
     """Validates that a ValueError is raised if a bot trades an unregistered asset."""
-    from brokers.simulated_adapter import SimulatedBrokerAdapter
-    from core.accounts import IsolatedAssetAccount
     from strategies.mean_reversion import AegisMeanReversionBot
 
-    account = IsolatedAssetAccount(asset_pair="EURUSD", initial_capital=10000.0)
-    broker = SimulatedBrokerAdapter(target_account=account)
+    mock_broker = MagicMock()
+    mock_broker.get_instrument_specification.side_effect = ValueError(
+        "Asset identity 'UNKNOWN' is missing from instrument registry."
+    )
 
     bot = AegisMeanReversionBot(
-        broker_bridge=broker,
-        instrument_specs={},
+        broker_bridge=mock_broker,
         warm_up_bars=10,
     )
 

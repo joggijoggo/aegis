@@ -7,6 +7,7 @@ from typing import Any
 
 from brokers.base_broker import AbstractBrokerBridge
 from core.accounts import IsolatedAssetAccount
+from core.models import InstrumentSpecification
 from core.models import OrderType
 from core.models import TransactionSide
 
@@ -71,6 +72,19 @@ class SimulatedBrokerAdapter(AbstractBrokerBridge):
             "equity": self.account.equity,
             "positions": [self.account.mock_positions] if self.account.mock_positions else []
         }
+
+# -----------------------------------------------------------------------------
+
+    def get_instrument_specification(self, symbol: str) -> InstrumentSpecification:
+        """Fetches dynamic fallback constraints specifications parameters.
+
+        Args:
+            symbol (str): Target asset tracking identifier.
+
+        Returns:
+            InstrumentSpecification: Standard baseline specifications snapshot.
+        """
+        return InstrumentSpecification(pip_size=0.0001, lot_size=100000)
 
 # =============================================================================
 # -----------------------------------------------------------------------------

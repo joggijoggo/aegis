@@ -8,7 +8,6 @@ from abc import abstractmethod
 from typing import Any
 
 from brokers.base_broker import AbstractBrokerBridge
-from core.models import InstrumentSpecification
 from core.models import MarketPricePoint
 from core.models import OrderType
 from core.models import TransactionSide
@@ -22,21 +21,14 @@ class AbstractStrategy(ABC):
 
 # -----------------------------------------------------------------------------
 
-    def __init__(
-        self,
-        broker_bridge: AbstractBrokerBridge,
-        instrument_specs: dict[str, InstrumentSpecification],
-        warm_up_bars: int = 200
-    ):
-        """Initializes the structural lifecycle tracker and asset parameters mapping.
+    def __init__(self, broker_bridge: AbstractBrokerBridge, warm_up_bars: int = 200):
+        """Initializes the structural lifecycle tracker anchoring the broker port.
 
         Args:
             broker_bridge (AbstractBrokerBridge): Connected execution gateway node.
-            instrument_specs (dict): Mapping of active asset parameters.
             warm_up_bars (int): Minimal history length required to clear lookups.
         """
         self.broker = broker_bridge
-        self.instrument_specs = instrument_specs
         self.warm_up_bars = warm_up_bars
         self.is_warmed_up = False
 
@@ -87,16 +79,8 @@ class AbstractStrategy(ABC):
 
         Returns:
             dict[str, Any]: Standardized execution receipt parameters.
-
-        Raises:
-            ValueError: If the target asset symbol is not registered.
         """
-        if symbol not in self.instrument_specs:
-            raise ValueError(
-                f"Asset identity '{symbol}' is missing from instrument registry."
-            )
-
-        spec = self.instrument_specs[symbol]
+        spec = self.broker.get_instrument_specification(symbol)
 
         if side == TransactionSide.LONG:
             stop_price = current_price - (stop_loss_pips * spec.pip_size)
