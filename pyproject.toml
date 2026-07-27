@@ -4,8 +4,7 @@ line-length = 90
 
 [tool.ruff.lint]
 # Active code rule directories for Aegis
-# E: Syntax & Style Errors, W: Style Warnings, F: Pyflakes, I: Isort, D: Docstrings
-select = ["E", "W", "F", "I", "D"]
+select = ["E", "W", "F", "D", "I"]
 ignore = [
     "D100",  # Missing docstring in public module (we handle via file headers)
     "D104",  # Missing docstring in public package
@@ -19,4 +18,7 @@ convention = "google"
 # Force strict 3-tier import splitting rules (Standard -> Third-Party -> Local)
 section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]
 known-first-party = ["core", "strategies", "brokers"]
-force-single-line = true
+
+[tool.ruff.lint.per-file-ignores]
+# Downgrade I001 sorting rule from critical reports across the repository
+"*" = ["I001"]

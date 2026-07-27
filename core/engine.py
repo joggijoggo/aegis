@@ -7,9 +7,9 @@ forward-fill time-alignment algorithms.
 from datetime import datetime
 from datetime import timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pandas as pd
-from zoneinfo import ZoneInfo
 
 from core.accounts import IsolatedAssetAccount
 
