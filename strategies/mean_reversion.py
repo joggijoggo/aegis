@@ -28,20 +28,13 @@ class AegisMeanReversionBot(AbstractStrategy):
 
 # -----------------------------------------------------------------------------
 
-    def on_bar_close(
+    def _on_bar_close(
         self,
         asset: str,
         price_snapshot: MarketPricePoint,
         historical_closes: list[float]
     ) -> None:
         """Evaluates ongoing pricing arrays to release automated brackets trades."""
-        # Enforce strict validation boundary constraints matching warm-up parameters
-        if len(historical_closes) < self.warm_up_bars:
-            self.is_warmed_up = False
-            return
-
-        self.is_warmed_up = True
-
         # Compute internal indicator metrics using simple rolling baseline mechanisms
         rolling_mean = sum(historical_closes[-self.warm_up_bars:]) / self.warm_up_bars
 

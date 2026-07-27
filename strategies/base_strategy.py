@@ -31,7 +31,6 @@ class AbstractStrategy(ABC):
 
 # -----------------------------------------------------------------------------
 
-    @abstractmethod
     def on_bar_close(
         self,
         asset: str,
@@ -45,6 +44,23 @@ class AbstractStrategy(ABC):
             price_snapshot (MarketPricePoint): Frozen immutable pricing bucket.
             historical_closes (list[float]): Available timeline collection space.
         """
+        if len(historical_closes) < self.warm_up_bars:
+            self.is_warmed_up = False
+            return
+
+        self.is_warmed_up = True
+        self._on_bar_close(asset, price_snapshot, historical_closes)
+
+# -----------------------------------------------------------------------------
+
+    @abstractmethod
+    def _on_bar_close(
+        self,
+        asset: str,
+        price_snapshot: MarketPricePoint,
+        historical_closes: list[float]
+    ) -> None:
+        """Core internal processing loop to be implemented by child strategies."""
         pass
 
 # =============================================================================
