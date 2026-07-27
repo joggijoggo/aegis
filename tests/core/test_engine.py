@@ -8,7 +8,8 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from core.engine import MasterClockBacktestEngine, TimeframeAggregator
+from core.aggregators import TimeframeAggregator
+from core.engine import MasterClockBacktestEngine
 
 # =============================================================================
 # -----------------------------------------------------------------------------
