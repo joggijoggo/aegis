@@ -4,11 +4,12 @@ Implements the synchronized master timeline clock loop and strict multi-asset
 forward-fill time-alignment algorithms.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime
+from datetime import timedelta
 from typing import Any
-from zoneinfo import ZoneInfo
 
 import pandas as pd
+from zoneinfo import ZoneInfo
 
 from core.accounts import IsolatedAssetAccount
 
@@ -32,7 +33,7 @@ class MasterClockBacktestEngine:
         Args:
             start_date (datetime): Backtest start window anchor boundary.
             end_date (datetime): Backtest terminal timeline parameter.
-            base_step_minutes (int): Internal monotonic timer pacing resolution.
+            base_step_minutes (int): Internal timer pacing resolution.
         """
         self.start_date = start_date.replace(tzinfo=ZoneInfo("UTC"))
         self.end_date = end_date.replace(tzinfo=ZoneInfo("UTC"))
@@ -92,9 +93,12 @@ class MasterClockBacktestEngine:
                 if current_time in dataframe.index:
                     row = dataframe.loc[current_time]
                     current_bar = {
-                        "open": float(row["open"]), "high": float(row["high"]),
-                        "low": float(row["low"]), "close": float(row["close"]),
-                        "volume": float(row["volume"]), "atr": float(row["atr"])
+                        "open": float(row["open"]),
+                        "high": float(row["high"]),
+                        "low": float(row["low"]),
+                        "close": float(row["close"]),
+                        "volume": float(row["volume"]),
+                        "atr": float(row["atr"])
                     }
                     last_known_bars[asset] = current_bar
                 else:
@@ -117,7 +121,7 @@ class MasterClockBacktestEngine:
         """Compiles accounting layers into flat dictionaries for extraction.
 
         Returns:
-            list[dict[str, Any]]: Sequential rows matching account ledger parameters.
+            list[dict[str, Any]]: Sequential rows matching account parameters.
         """
         compiled_logs = []
         for bot_id, portfolio in self.registered_accounts.items():

@@ -5,10 +5,10 @@ to enforce TDD validation of the Master Clock alignment algorithms.
 """
 
 from datetime import datetime
-from zoneinfo import ZoneInfo
 
 import pandas as pd
 import pytest
+from zoneinfo import ZoneInfo
 
 # =============================================================================
 # -----------------------------------------------------------------------------
