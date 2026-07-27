@@ -1,0 +1,28 @@
+[tool.ruff]
+# Target strict compliance with 90 columns limit for adaptive readability
+line-length = 90
+
+[tool.ruff.lint]
+# Active code rule directories for Aegis
+select = ["E", "W", "F", "D", "I"]
+ignore = [
+    "D100",  # Missing docstring in public module (we handle via file headers)
+    "D104",  # Missing docstring in public package
+]
+
+[tool.ruff.lint.pydocstyle]
+# Enforce strict Google Style Docstrings as validated in architecture
+convention = "google"
+
+[tool.ruff.lint.isort]
+# Force strict 3-tier import splitting rules (Standard -> Third-Party -> Local)
+section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]
+known-first-party = ["core", "strategies", "brokers"]
+
+[tool.ruff.lint.per-file-ignores]
+# Downgrade I001 sorting rule from critical reports across the repository
+"*" = ["I001"]
+
+[tool.pytest.ini_options]
+# Automatically trigger coverage with strict 100% threshold enforcement
+addopts = "--cov=core --cov-report=term-missing --cov-fail-under=100"
