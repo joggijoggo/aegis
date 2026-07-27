@@ -58,21 +58,20 @@ class MarketRegimeClassifier:
         )
 
         # 3. Enhanced financial weight mapping
-        # A low Kaufman ER combined with low Hurst indicates structural cyclicality
         mr_weight = max(0.0, (0.5 - hurst_exponent) * 4.0) + (1.0 - kaufman_er) * 2.0
         trend_weight = max(0.0, (hurst_exponent - 0.5) * 4.0) + kaufman_er * 3.0
 
         # Noise dominates only when Hurst is exactly near 0.5 and ER is neutral
         noise_weight = max(0.0, 1.0 - abs(hurst_exponent - 0.5) * 2.0) * (1.0 - kaufman_er)
 
+        # Secure total weight sum normalization to clear mathematical boundaries
         total_weight = mr_weight + trend_weight + noise_weight
-        if total_weight == 0:
-            return RegimeConfidenceVector(mean_reversion=0.33, trending=0.33, noise=0.34)
+        eps_weight = total_weight if total_weight > 0 else 1.0
 
         return RegimeConfidenceVector(
-            mean_reversion=mr_weight / total_weight,
-            trending=trend_weight / total_weight,
-            noise=noise_weight / total_weight
+            mean_reversion=mr_weight / eps_weight,
+            trending=trend_weight / eps_weight,
+            noise=noise_weight / eps_weight
         )
 
 # =============================================================================

@@ -30,6 +30,19 @@ def test_market_regime_classifier_statistical_vectors():
     assert vector_trend.trending > 0.50
     assert vector_trend.mean_reversion < 0.50
 
+# -----------------------------------------------------------------------------
+
+def test_market_regime_classifier_insufficient_data_fallback():
+    """Validates uniform distribution fallback when data length is too short."""
+    from strategies.regime_manager import MarketRegimeClassifier
+
+    classifier = MarketRegimeClassifier()
+    short_series = [1.0, 1.02, 1.01]
+
+    vector = classifier.classify_series(short_series)
+    assert vector.mean_reversion == 0.33
+    assert vector.trending == 0.33
+
 # =============================================================================
 # -----------------------------------------------------------------------------
 # =============================================================================

@@ -81,6 +81,12 @@ def test_strategy_lifecycle_and_warm_up_shield():
     assert last_telemetry.indicator_value > 0.0
     assert last_telemetry.regime_vector.mean_reversion > 0.40
 
+    # Extract ledger records to verify baseline account parameters synchronization
+    snapshot = broker.get_portfolio_snapshot()
+    assert snapshot["balance"] == 10000.0
+    assert snapshot["equity"] == 10000.0
+    assert len(snapshot["positions"]) == 1
+
 # =============================================================================
 # -----------------------------------------------------------------------------
 # =============================================================================
