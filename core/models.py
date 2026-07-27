@@ -31,6 +31,22 @@ class OrderType(Enum):
 # =============================================================================
 
 @dataclass(frozen=True)
+class RegimeConfidenceVector:
+    """Immutably stores normalized classification probabilities for market states.
+
+    Attributes:
+        mean_reversion (float): Probability score for cyclical range environments.
+        trending (float): Probability score for persistent breakout regimes.
+        noise (float): Probability score for balanced random walk conditions.
+    """
+
+    mean_reversion: float
+    trending: float
+    noise: float
+
+# -----------------------------------------------------------------------------
+
+@dataclass(frozen=True)
 class MarketPricePoint:
     """Unified synchronized price bucket anchoring absolute execution metrics.
 
