@@ -8,6 +8,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from brokers.backtrader_adapter import BacktraderBrokerAdapter
+from core.models import InstrumentSpecification
 from core.models import OrderType
 from core.models import TransactionSide
 
@@ -17,23 +18,24 @@ from core.models import TransactionSide
 
 def test_backtrader_adapter_calculates_absolute_bracket_prices_for_short():
     """Validates absolute pricing translation loops for SHORT bracket orders."""
-    # 1. Create a mock representation of Backtrader strategy component
     mock_bt_strategy = MagicMock()
-
-    # Simulate a current market asset data structure layer matching line series contract
     mock_data = MagicMock()
     mock_data.close = MagicMock()
     mock_data.close.__float__.return_value = 1.1000
     mock_bt_strategy.data = mock_data
 
-    # Simulate broker state indicators
     mock_bt_strategy.broker.get_cash.return_value = 10000.0
     mock_bt_strategy.broker.get_value.return_value = 10000.0
 
-    # 2. Instantiate the port adapter anchoring the mock strategy
-    adapter = BacktraderBrokerAdapter(bt_strategy=mock_bt_strategy)
+    registry: dict[str, InstrumentSpecification] = {
+        "EURUSD": InstrumentSpecification(pip_size=0.0001, lot_size=100000)
+    }
 
-    # 3. Trigger a SHORT order transaction payload request
+    adapter = BacktraderBrokerAdapter(
+        bt_strategy=mock_bt_strategy,
+        instrument_specs=registry,
+    )
+
     receipt = adapter.place_order(
         symbol="EURUSD",
         side=TransactionSide.SHORT,
@@ -43,11 +45,9 @@ def test_backtrader_adapter_calculates_absolute_bracket_prices_for_short():
         take_profit_pips=40.0
     )
 
-    # 4. Verify transaction tracking receipt output parameters
     assert receipt["status"] == "SUBMITTED"
     assert receipt["symbol"] == "EURUSD"
 
-    # 5. Verify mathematical translation to absolute prices for a SHORT trade
     mock_bt_strategy.sell_bracket.assert_called_once_with(
         price=1.1000,
         stopprice=1.1020,
@@ -55,55 +55,84 @@ def test_backtrader_adapter_calculates_absolute_bracket_prices_for_short():
         size=100000  # 1.0 standard lot size multiplier anchor
     )
 
-    # 6. Verify broker snapshot synchronization interface routing
     snapshot = adapter.get_portfolio_snapshot()
     assert snapshot["balance"] == 10000.0
     assert snapshot["equity"] == 10000.0
 
+
 # -----------------------------------------------------------------------------
 
-def test_backtrader_adapter_calculates_absolute_bracket_prices_for_long():
-    """Validates absolute pricing translation loops for LONG bracket orders."""
+def test_backtrader_adapter_accepts_dynamic_custom_assets_injection():
+    """Validates that users can dynamically register custom assets like AUDJPY."""
     mock_bt_strategy = MagicMock()
     mock_data = MagicMock()
     mock_data.close = MagicMock()
-    mock_data.close.__float__.return_value = 1.1000
+    mock_data.close.__float__.return_value = 95.50
     mock_bt_strategy.data = mock_data
 
-    mock_bt_strategy.broker.get_cash.return_value = 10000.0
-    mock_bt_strategy.broker.get_value.return_value = 10000.0
+    registry: dict[str, InstrumentSpecification] = {
+        "AUDJPY": InstrumentSpecification(pip_size=0.01, lot_size=100000)
+    }
 
-    adapter = BacktraderBrokerAdapter(bt_strategy=mock_bt_strategy)
+    adapter = BacktraderBrokerAdapter(
+        bt_strategy=mock_bt_strategy,
+        instrument_specs=registry,
+    )
 
-    # Trigger a LONG order transaction payload request
-    receipt = adapter.place_order(
-        symbol="EURUSD",
+    adapter.place_order(
+        symbol="AUDJPY",
         side=TransactionSide.LONG,
         order_type=OrderType.MARKET,
-        volume_lots=1.0,
-        stop_loss_pips=20.0,
-        take_profit_pips=40.0
+        volume_lots=1.5,
+        stop_loss_pips=30.0,
+        take_profit_pips=60.0
     )
 
-    assert receipt["status"] == "SUBMITTED"
-    assert receipt["symbol"] == "EURUSD"
-
-    # Verify mathematical translation to absolute prices for a LONG trade
     mock_bt_strategy.buy_bracket.assert_called_once_with(
-        price=1.1000,
-        stopprice=1.0980,
-        limitprice=1.1040,
-        size=100000  # 1.0 standard lot size multiplier anchor
+        price=95.50,
+        stopprice=95.20,
+        limitprice=96.10,
+        size=150000
     )
+
+
+# -----------------------------------------------------------------------------
+
+def test_backtrader_adapter_raises_error_on_unregistered_asset_symbol():
+    """Validates that a ValueError is raised if the instrument is missing."""
+    mock_bt_strategy = MagicMock()
+    registry: dict[str, InstrumentSpecification] = {}
+
+    adapter = BacktraderBrokerAdapter(
+        bt_strategy=mock_bt_strategy,
+        instrument_specs=registry,
+    )
+
+    with pytest.raises(ValueError) as exc_info:
+        adapter.place_order(
+            symbol="UNKNOWN",
+            side=TransactionSide.LONG,
+            order_type=OrderType.MARKET,
+            volume_lots=1.0,
+            stop_loss_pips=20.0,
+            take_profit_pips=40.0
+        )
+
+    assert "missing from instrument registry" in str(exc_info.value)
+
 
 # -----------------------------------------------------------------------------
 
 def test_backtrader_adapter_raises_not_implemented_error_on_missing_parameters():
     """Validates that a NotImplementedError is raised if protection is missing."""
     mock_bt_strategy = MagicMock()
-    adapter = BacktraderBrokerAdapter(bt_strategy=mock_bt_strategy)
+    registry: dict[str, InstrumentSpecification] = {}
 
-    # Execute a payload routing request with missing protection limits
+    adapter = BacktraderBrokerAdapter(
+        bt_strategy=mock_bt_strategy,
+        instrument_specs=registry,
+    )
+
     with pytest.raises(NotImplementedError) as exc_info:
         adapter.place_order(
             symbol="EURUSD",

@@ -6,6 +6,7 @@ Implements the outbound port adapter translating pips metrics to absolute prices
 from typing import Any
 
 from brokers.base_broker import AbstractBrokerBridge
+from core.models import InstrumentSpecification
 from core.models import OrderType
 from core.models import TransactionSide
 
@@ -18,15 +19,15 @@ class BacktraderBrokerAdapter(AbstractBrokerBridge):
 
 # -----------------------------------------------------------------------------
 
-    def __init__(self, bt_strategy: Any):
+    def __init__(self, bt_strategy: Any, instrument_specs: dict[str, InstrumentSpecification]):
         """Initializes the adapter anchored to an active Backtrader strategy.
 
         Args:
             bt_strategy (Any): Active instance of a bt.Strategy object.
+            instrument_specs (dict[str, InstrumentSpecification]): Enforced parameters.
         """
         self.strategy = bt_strategy
-        self._pip_size = 0.0001
-        self._lot_multiplier = 100000
+        self._instrument_specs = instrument_specs
 
 # -----------------------------------------------------------------------------
 
@@ -54,6 +55,7 @@ class BacktraderBrokerAdapter(AbstractBrokerBridge):
 
         Raises:
             NotImplementedError: If any bracket protection parameter is missing.
+            ValueError: If the target asset symbol is not registered.
         """
         if stop_loss_pips is None or take_profit_pips is None:
             raise NotImplementedError(
@@ -61,12 +63,21 @@ class BacktraderBrokerAdapter(AbstractBrokerBridge):
                 "take_profit_pips parameters to enforce strict bracket routing."
             )
 
+        if symbol not in self._instrument_specs:
+            raise ValueError(
+                f"Asset identity '{symbol}' is missing from instrument registry."
+            )
+
+        # Secure attribute extraction leveraging static dataclass dot notation
+        instrument_spec = self._instrument_specs[symbol]
+        pip_size = instrument_spec.pip_size
+        size_units = int(volume_lots * instrument_spec.lot_size)
+
         entry_price = float(self.strategy.data.close)
-        size_units = int(volume_lots * self._lot_multiplier)
 
         if side == TransactionSide.LONG:
-            stop_price = entry_price - (stop_loss_pips * self._pip_size)
-            limit_price = entry_price + (take_profit_pips * self._pip_size)
+            stop_price = entry_price - (stop_loss_pips * pip_size)
+            limit_price = entry_price + (take_profit_pips * pip_size)
             self.strategy.buy_bracket(
                 price=entry_price,
                 stopprice=stop_price,
@@ -74,8 +85,8 @@ class BacktraderBrokerAdapter(AbstractBrokerBridge):
                 size=size_units
             )
         else:
-            stop_price = entry_price + (stop_loss_pips * self._pip_size)
-            limit_price = entry_price - (take_profit_pips * self._pip_size)
+            stop_price = entry_price + (stop_loss_pips * pip_size)
+            limit_price = entry_price - (take_profit_pips * pip_size)
             self.strategy.sell_bracket(
                 price=entry_price,
                 stopprice=stop_price,
