@@ -1,9 +1,8 @@
 """Aegis Framework - Simulated Broker Adapter Layer.
 
-Implements the outbound simulation adapter routing orders to the isolated ledger.
+Implements the outbound port adapter mimicking ledger execution transactions.
 """
 
-import uuid
 from typing import Any
 
 from brokers.base_broker import AbstractBrokerBridge
@@ -16,15 +15,15 @@ from core.models import TransactionSide
 # =============================================================================
 
 class SimulatedBrokerAdapter(AbstractBrokerBridge):
-    """Outbound adapter routing execution contracts to historical ledger nodes."""
+    """Outbound adapter connecting strategies requests to virtual asset accounts."""
 
 # -----------------------------------------------------------------------------
 
     def __init__(self, target_account: IsolatedAssetAccount):
-        """Initializes the simulation adapter anchored to a specific ledger account.
+        """Initializes the structural adapter anchoring the target ledger account.
 
         Args:
-            target_account (IsolatedAssetAccount): Target ledger workspace instance.
+            target_account (IsolatedAssetAccount): Virtual asset account node.
         """
         self.account = target_account
 
@@ -36,50 +35,41 @@ class SimulatedBrokerAdapter(AbstractBrokerBridge):
         side: TransactionSide,
         order_type: OrderType,
         volume_lots: float,
-        stop_loss_pips: float | None = None,
-        take_profit_pips: float | None = None
+        stop_loss_price: float,
+        take_profit_price: float
     ) -> dict[str, Any]:
-        """Routes an execution contract request to the target matching engine.
+        """Routes transaction parameters records to the virtual isolated ledger.
 
         Args:
-            symbol (str): Target currency pair tracking identifier.
-            side (TransactionSide): Enforced transaction direction enum.
+            symbol (str): Target currency pair symbol identifier.
+            side (TransactionSide): Enforced execution direction enum.
             order_type (OrderType): Enforced execution constraint type enum.
-            volume_lots (float): Lot size exposure allocation.
-            stop_loss_pips (float | None): Optional protective stop distance.
-            take_profit_pips (float | None): Optional target limit distance.
+            volume_lots (float): Lot size exposure parameter.
+            stop_loss_price (float): Enforced absolute protection target marker.
+            take_profit_price (float): Enforced absolute protection profit marker.
 
         Returns:
-            dict[str, Any]: Standardized execution receipt parameters.
+            dict[str, Any]: Execution parameters tracking mapping record.
         """
-        # Mapping the side enum value to historical string expected by Jalon 1 account
-        self.account.open_mock_position(
-            side=side.value,
-            size_lots=volume_lots,
-            entry_price=0.0
-        )
-
-        return {
-            "transaction_id": str(uuid.uuid4()),
-            "status": "FILLED",
+        self.account.mock_positions = {
             "symbol": symbol,
-            "side": side,
-            "order_type": order_type,
-            "volume_lots": volume_lots
+            "side": side.value,
+            "size_lots": volume_lots,
         }
+        return {"status": "SUBMITTED", "symbol": symbol}
 
 # -----------------------------------------------------------------------------
 
     def get_portfolio_snapshot(self) -> dict[str, Any]:
-        """Fetches dynamic localized financial balances and open position nodes.
+        """Extracts dynamic ledger metrics maps parameters from virtual accounts.
 
         Returns:
-            dict[str, Any]: Structure mapping cash, equity, and active trades.
+            dict[str, Any]: Structure mapping balance and positions metrics records.
         """
         return {
             "balance": self.account.balance,
             "equity": self.account.equity,
-            "positions": self.account.mock_positions
+            "positions": [self.account.mock_positions] if self.account.mock_positions else []
         }
 
 # =============================================================================

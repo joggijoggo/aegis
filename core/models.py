@@ -17,7 +17,6 @@ class InstrumentSpecification:
     pip_size: float
     lot_size: int
 
-
 # -----------------------------------------------------------------------------
 
 class TransactionSide(Enum):
@@ -25,14 +24,12 @@ class TransactionSide(Enum):
     LONG = "LONG"
     SHORT = "SHORT"
 
-
 # -----------------------------------------------------------------------------
 
 class OrderType(Enum):
     """Enforces structural routing parameter limitations for orders executions."""
     MARKET = "MARKET"
     LIMIT = "LIMIT"
-
 
 # -----------------------------------------------------------------------------
 
@@ -45,7 +42,6 @@ class MarketPricePoint:
     ask: float
     current_atr: float
 
-
 # -----------------------------------------------------------------------------
 
 @dataclass(frozen=True)
@@ -54,7 +50,6 @@ class RegimeConfidenceVector:
     mean_reversion: float
     trending: float
     noise: float
-
 
 # -----------------------------------------------------------------------------
 
