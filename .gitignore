@@ -1,0 +1,25 @@
+# Python virtual environments & bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+
+# Project specific data locks (Never commit raw historical data or local cache maps)
+data/raw/
+data/processing/
+data/cache/
+core/data/
+*.csv
+*.parquet
+*.pickle
+
+# IDE settings
+.vscode/
+.idea/
+
+# Testing benchmarks
+.pytest_cache/
+.coverage
+htmlcov/
