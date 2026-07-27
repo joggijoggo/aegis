@@ -12,7 +12,6 @@ from core.optimization import WalkForwardOptimizer
 # -----------------------------------------------------------------------------
 # =============================================================================
 
-
 def test_wfo_window_slicing_integrity():
     """Validates boundary anchoring and zero data leakage between windows."""
     # Define a 3-month anchor space grid
@@ -38,7 +37,6 @@ def test_wfo_window_slicing_integrity():
     assert first_w['train_start'] == start_time
     assert first_w['train_end'] == first_w['test_start']
     assert first_w['test_end'] <= end_time
-
 
 # =============================================================================
 # -----------------------------------------------------------------------------

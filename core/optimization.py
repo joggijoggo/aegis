@@ -12,7 +12,6 @@ from zoneinfo import ZoneInfo
 # -----------------------------------------------------------------------------
 # =============================================================================
 
-
 class WalkForwardOptimizer:
     """Orchestrates historical dataset slicing into train/test windows."""
 
@@ -69,7 +68,6 @@ class WalkForwardOptimizer:
             current_train_start = current_train_start + self.test_delta
 
         return generated_slices
-
 
 # =============================================================================
 # -----------------------------------------------------------------------------
