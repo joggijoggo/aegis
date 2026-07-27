@@ -1,3 +1,4 @@
+backtrader==1.9.78.123
 coverage==7.15.2
 iniconfig==2.3.0
 numpy==2.5.1
