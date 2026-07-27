@@ -47,6 +47,22 @@ class RegimeConfidenceVector:
 # -----------------------------------------------------------------------------
 
 @dataclass(frozen=True)
+class TradeTelemetrySnapshot:
+    """Immutably preserves execution context analytics for post-mortem audits.
+
+    Attributes:
+        timestamp (datetime): Exact timeline parameter of order generation.
+        indicator_value (float): Value of the execution technical indicator anchor.
+        regime_vector (RegimeConfidenceVector): Market state analysis snapshot.
+    """
+
+    timestamp: datetime
+    indicator_value: float
+    regime_vector: RegimeConfidenceVector
+
+# -----------------------------------------------------------------------------
+
+@dataclass(frozen=True)
 class MarketPricePoint:
     """Unified synchronized price bucket anchoring absolute execution metrics.
 
