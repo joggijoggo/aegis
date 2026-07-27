@@ -1,0 +1,9 @@
+[report]
+# Exclude lines that cannot or should not be executed during coverage scans
+exclude_lines =
+    pragma: no cover
+    def __repr__
+    raise NotImplementedError
+    if __name__ == .__main__.:
+    pass
+    @abstractmethod
