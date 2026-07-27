@@ -22,3 +22,7 @@ known-first-party = ["core", "strategies", "brokers"]
 [tool.ruff.lint.per-file-ignores]
 # Downgrade I001 sorting rule from critical reports across the repository
 "*" = ["I001"]
+
+[tool.pytest.ini_options]
+# Automatically trigger coverage with strict 100% threshold enforcement
+addopts = "--cov=core --cov-report=term-missing --cov-fail-under=100"

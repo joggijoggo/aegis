@@ -1,11 +1,10 @@
 #!/bin/bash
-"""Aegis Framework - Test Execution Runner.
+# =============================================================================
+# Aegis Framework - Test & Coverage Runner.
+# Activates the local virtual environment, runs pytest and outputs code coverage.
+# =============================================================================
 
-Activates the local virtual environment and runs the pytest matrix cleanly.
-"""
-
-# Active local virtual environment isolation layers
 source .venv/bin/activate
 
-echo "🧪 [Aegis Shell] Launching automated unit testing suite..."
-pytest tests/ "$@"
+echo "🧪 [Aegis Shell] Launching automated unit testing & coverage matrix..."
+pytest --cov=core --cov-report=term-missing tests/ "$@"
