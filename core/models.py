@@ -6,6 +6,25 @@ regime confidence vectors, and execution metrics.
 
 from dataclasses import dataclass
 from datetime import datetime
+from enum import Enum
+
+# =============================================================================
+# -----------------------------------------------------------------------------
+# =============================================================================
+
+class TransactionSide(Enum):
+    """Enforces strict cryptographic compilation bounds for order directions."""
+
+    LONG = "LONG"
+    SHORT = "SHORT"
+
+# -----------------------------------------------------------------------------
+
+class OrderType(Enum):
+    """Enforces strict execution constraint parameters for broker matching engines."""
+
+    MARKET = "MARKET"
+    LIMIT = "LIMIT"
 
 # =============================================================================
 # -----------------------------------------------------------------------------
