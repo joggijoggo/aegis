@@ -77,6 +77,24 @@ class DynamicFrictionEngine:
             is_night_tariff=is_night,
         )
 
+# -----------------------------------------------------------------------------
+
+    def calculate_commission(
+        self,
+        size: float,
+        commission_per_lot: float,
+    ) -> float:
+        """Calculates the absolute institutional execution fee based on volume.
+
+        Args:
+            size (float): Position size expressed in transaction lots.
+            commission_per_lot (float): Contract commission rate per volume unit.
+
+        Returns:
+            float: Total calculated fee currency volume value.
+        """
+        return float(size * commission_per_lot)
+
 # =============================================================================
 # -----------------------------------------------------------------------------
 # =============================================================================

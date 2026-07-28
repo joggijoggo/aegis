@@ -15,6 +15,23 @@ from core.frictions import DynamicFrictionEngine
 # -----------------------------------------------------------------------------
 # =============================================================================
 
+def test_dynamic_friction_engine_execution_commission():
+    """Verify institutional volume-based execution commission math calculations."""
+    engine = DynamicFrictionEngine(
+        base_spread_ticks=0.6,
+        tick_size=0.0001,
+        volatility_factor=0.1,
+    )
+
+    # CASE 1: Evaluate standard linear commission calculation per lot volume
+    commission_cost = engine.calculate_commission(
+        size=2.5,
+        commission_per_lot=1.50,
+    )
+    assert commission_cost == 3.75
+
+# -----------------------------------------------------------------------------
+
 def test_dynamic_friction_engine_strict_constructor_contract():
     """Verify that omitting required parameters raises strict initialization errors."""
     # CASE 1: Attempt instantiating without tick_size parameter
