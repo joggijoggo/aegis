@@ -297,6 +297,8 @@ def test_backtrader_bridge_propagates_dynamic_friction_metrics():
     assert round(price_snapshot.ask - price_snapshot.bid, 5) == 0.00044
     assert isinstance(price_snapshot.mid_price, float) is True
     assert isinstance(price_snapshot.current_atr, float) is True
+    assert price_snapshot.timestamp.tzinfo is not None
+    assert str(price_snapshot.timestamp.tzinfo) == "UTC"
 # -----------------------------------------------------------------------------
 
 def test_backtrader_bridge_raises_value_error_on_unregistered_asset():
