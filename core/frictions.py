@@ -52,26 +52,24 @@ class IGGroupFrictionEngine:
         Returns:
             MarketPricePoint: Structured snapshot mapping absolute spreads.
         """
-        london_time = utc_time.astimezone(self.london_tz)
-        h = london_time.hour
-        m = london_time.minute
+        paris_zone = ZoneInfo("Europe/Paris")
+        local_time = utc_time.astimezone(paris_zone)
 
-        is_rollover = False
-        if (h == 21 and m >= 45) or (h == 22) or (h == 23 and m <= 15):
-            is_rollover = True
+        is_night = local_time.hour >= 23 or local_time.hour < 8
+        multiplier = 4.0 if is_night else 1.0
+        total_spread = self.base_spread_pips * multiplier * self.pip_value
 
-        multiplier = 4.0 if is_rollover else 1.0
-
-        vol_markup = current_atr / self.pip_value if current_atr > 0 else 0.0
-        total_spread_pips = (self.base_spread_pips + vol_markup) * multiplier
-        half_spread_value = (total_spread_pips * self.pip_value) / 2.0
+        half_spread = total_spread / 2.0
+        bid_price = mid_price - half_spread
+        ask_price = mid_price + half_spread
 
         return MarketPricePoint(
             timestamp=utc_time,
             mid_price=mid_price,
-            bid=mid_price - half_spread_value,
-            ask=mid_price + half_spread_value,
-            current_atr=current_atr
+            bid=bid_price,
+            ask=ask_price,
+            current_atr=current_atr,
+            is_night_tariff=is_night
         )
 
 # =============================================================================

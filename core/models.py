@@ -75,6 +75,7 @@ class MarketPricePoint:
     bid: float
     ask: float
     current_atr: float
+    is_night_tariff: bool = False
 
 # -----------------------------------------------------------------------------
 
