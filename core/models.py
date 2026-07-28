@@ -33,6 +33,26 @@ class OrderType(Enum):
 
 # -----------------------------------------------------------------------------
 
+class OrderStatus(Enum):
+    """Enforces compile-time type safety for asynchronous lifecycle states."""
+    COMPLETED = "COMPLETED"
+    REJECTED = "REJECTED"
+
+# -----------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class OrderEvent:
+    """Captures absolute transactional metadata generated during order updates."""
+    order_id: int
+    symbol: str
+    status: OrderStatus
+    side: TransactionSide
+    executed_price: float
+    executed_size: int
+    timestamp: datetime
+
+# -----------------------------------------------------------------------------
+
 @dataclass(frozen=True)
 class MarketPricePoint:
     """Protects pricing snapshots matrix calculations from mutations."""

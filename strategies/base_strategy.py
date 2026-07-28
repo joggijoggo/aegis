@@ -9,6 +9,7 @@ from typing import Any
 
 from brokers.base_broker import AbstractBrokerBridge
 from core.models import MarketPricePoint
+from core.models import OrderEvent
 from core.models import OrderType
 from core.models import TransactionSide
 
@@ -31,6 +32,7 @@ class AbstractStrategy(ABC):
         self.broker = broker_bridge
         self.warm_up_bars = warm_up_bars
         self.is_warmed_up = False
+        self.order_events: list[OrderEvent] = []
 
 # -----------------------------------------------------------------------------
 

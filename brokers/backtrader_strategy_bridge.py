@@ -9,6 +9,9 @@ import backtrader as bt
 
 from brokers.backtrader_adapter import BacktraderBrokerAdapter
 from core.models import MarketPricePoint
+from core.models import OrderEvent
+from core.models import OrderStatus
+from core.models import TransactionSide
 
 # =============================================================================
 # -----------------------------------------------------------------------------
@@ -42,7 +45,7 @@ class BacktraderStrategyBridge(bt.Strategy):
         """Evaluates ongoing terminal intervals ticks released by Cerebro loops."""
         # 1. Capture exact timeline timestamp parameters from Backtrader line tracking
         current_dt = self.data.datetime.datetime(0)
-        mid_price = float(self.data.close[0])
+        mid_price = self.data.close[0]
 
         # 2. Simulate standard asset pricing matrix offsets parameters
         # Note: Will leverage dynamic IGFrictionEngine linkage during Jalon 5 expansion
@@ -68,6 +71,36 @@ class BacktraderStrategyBridge(bt.Strategy):
             price_snapshot=price_snapshot,
             historical_closes=historical_closes,
         )
+
+# -----------------------------------------------------------------------------
+
+    def notify_order(self, order: bt.Order) -> None:
+        """Intercepts and routes asynchronous carnet order lifecycle changes.
+
+        Args:
+            order (bt.Order): Native Backtrader order instance tracking payload.
+        """
+        if order.status == bt.Order.Completed:
+            status_enum = OrderStatus.COMPLETED
+        elif order.status in (bt.Order.Rejected, bt.Order.Margin, bt.Order.Canceled):
+            status_enum = OrderStatus.REJECTED
+        else:
+            return
+
+        side_enum = TransactionSide.LONG if order.isbuy() else TransactionSide.SHORT
+        event_dt = self.data.datetime.datetime(0)
+
+        event = OrderEvent(
+            order_id=order.ref,
+            symbol="EURUSD",
+            status=status_enum,
+            side=side_enum,
+            executed_price=float(order.executed.price) if order.status == bt.Order.Completed else 0.0,
+            executed_size=int(order.executed.size),
+            timestamp=event_dt,
+        )
+
+        self.aegis_bot.order_events.append(event)
 
 # =============================================================================
 # -----------------------------------------------------------------------------
