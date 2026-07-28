@@ -14,7 +14,9 @@ from enum import Enum
 @dataclass(frozen=True)
 class InstrumentSpecification:
     """Enforces compile-time type validation for multi-asset market parameters."""
-    pip_size: float
+    base_spread_ticks: float
+    tick_size: float
+    volatility_factor: float
     lot_size: int
 
 # -----------------------------------------------------------------------------
