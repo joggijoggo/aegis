@@ -79,6 +79,31 @@ def test_position_sizer_applies_strict_floor_truncation_based_on_lot_step():
 
 # -----------------------------------------------------------------------------
 
+def test_position_sizer_prevents_ieee754_flooring_degradation_anomalies():
+    """Verify that the sizer neutralizes float rounding micro-residues.
+
+    With raw floats, calculating a target of 2.3 lots with a lot_step of 0.01
+    causes a binary floor degradation. The operation 2.3 // 0.01 yields 229.0
+    instead of 230.0 due to base-2 representation limits, dropping final volume.
+    """
+    sizer = PositionSizer(instrument_registry=TEST_REGISTRY)
+    request = OrderRequest(
+        symbol="EURUSD",
+        stop_loss_ticks=1.0,
+        risk_percentage=2.3,
+        confidence_factor=1.0,
+    )
+
+    result = sizer.compute_volume(
+        account_equity=1000.0,
+        order_request=request,
+    )
+
+    assert result.is_approved is True
+    assert result.calculated_volume_lots == 2.3
+
+# -----------------------------------------------------------------------------
+
 def test_position_sizer_rejects_orders_below_minimum_contract_size():
     """Verify that the sizer flags a rejection when computed volume is below min_lot."""
     sizer = PositionSizer(instrument_registry=TEST_REGISTRY)
