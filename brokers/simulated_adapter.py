@@ -10,6 +10,7 @@ from core.accounts import IsolatedAssetAccount
 from core.models import InstrumentSpecification
 from core.models import OrderType
 from core.models import TransactionSide
+from core.registry import InstrumentRegistry
 
 # =============================================================================
 # -----------------------------------------------------------------------------
@@ -20,13 +21,19 @@ class SimulatedBrokerAdapter(AbstractBrokerBridge):
 
 # -----------------------------------------------------------------------------
 
-    def __init__(self, target_account: IsolatedAssetAccount):
+    def __init__(
+        self,
+        target_account: IsolatedAssetAccount,
+        instrument_registry: InstrumentRegistry,
+    ):
         """Initializes the structural adapter anchoring the target ledger account.
 
         Args:
             target_account (IsolatedAssetAccount): Virtual asset account node.
+            instrument_registry (InstrumentRegistry): Enforced domain registry.
         """
         self.account = target_account
+        self._instrument_registry = instrument_registry
 
 # -----------------------------------------------------------------------------
 
@@ -76,23 +83,15 @@ class SimulatedBrokerAdapter(AbstractBrokerBridge):
 # -----------------------------------------------------------------------------
 
     def get_instrument_specification(self, symbol: str) -> InstrumentSpecification:
-        """Fetches dynamic fallback constraints specifications parameters.
+        """Fetches contract specifications from the central domain registry.
 
         Args:
-            symbol (str): Target asset tracking identifier.
+            symbol (str): Target financial asset symbol tracking identifier.
 
         Returns:
-            InstrumentSpecification: Standard baseline specifications snapshot.
+            InstrumentSpecification: Typed immutable contract specifications.
         """
-        return InstrumentSpecification(
-            base_spread_ticks=0.6,
-            lot_size=100000,
-            lot_step=0.01,
-            margin_requirement=0.05,
-            min_lot=0.10,
-            tick_size=0.0001,
-            volatility_factor=0.1,
-        )
+        return self._instrument_registry.get_specification(symbol=symbol)
 
 # =============================================================================
 # -----------------------------------------------------------------------------
