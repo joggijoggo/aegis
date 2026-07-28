@@ -3,6 +3,7 @@
 Implements secondary prudential filters enforcing drawdown fuses and margin checks.
 """
 
+from decimal import Decimal
 from core.models import OrderRequest
 from core.models import RiskValidationResult
 from core.registry import InstrumentRegistry
@@ -55,31 +56,25 @@ class RiskManager:
             The structured verdict containing the definitive risk clearance.
         """
         if current_portfolio_drawdown >= self._max_drawdown_limit:
-            return RiskValidationResult(
-                is_approved=False,
-                calculated_volume_lots=0.0,
-                rejection_reason="Maximum drawdown limit breached.",
-            )
+            return RiskValidationResult(False, 0.0, "Maximum drawdown limit breached.")
 
-        spec = self._instrument_registry.get_specification(
-            symbol=order_request.symbol,
-        )
+        spec = self._instrument_registry.get_specification(symbol=order_request.symbol)
 
-        nominal_exposure = volume_lots * spec.lot_size * current_price
-        required_margin = nominal_exposure * spec.margin_requirement
+        # Cast raw inputs to string-based exact decimal instances
+        volume_dec = Decimal(str(volume_lots))
+        lot_size_dec = Decimal(str(spec.lot_size))
+        price_dec = Decimal(str(current_price))
+        margin_req_dec = Decimal(str(spec.margin_requirement))
+        liquidity_dec = Decimal(str(available_liquidity))
 
-        if required_margin > available_liquidity:
-            return RiskValidationResult(
-                is_approved=False,
-                calculated_volume_lots=0.0,
-                rejection_reason="Insufficient margin liquidity.",
-            )
+        # Compute required margin liquidity via high-precision base-10 math
+        nominal_exposure = volume_dec * lot_size_dec * price_dec
+        required_margin = nominal_exposure * margin_req_dec
 
-        return RiskValidationResult(
-            is_approved=True,
-            calculated_volume_lots=volume_lots,
-            rejection_reason="",
-        )
+        if required_margin > liquidity_dec:
+            return RiskValidationResult(False, 0.0, "Insufficient margin liquidity.")
+
+        return RiskValidationResult(True, volume_lots, "")
 
 # =============================================================================
 # -----------------------------------------------------------------------------
