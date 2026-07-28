@@ -5,9 +5,8 @@ drain markup penalties tailored to modern clearing conditions.
 """
 
 from datetime import datetime
-
+from decimal import Decimal
 from zoneinfo import ZoneInfo
-
 from core.models import MarketPricePoint
 
 # =============================================================================
@@ -59,14 +58,23 @@ class DynamicFrictionEngine:
         local_time = utc_time.astimezone(paris_zone)
 
         is_night = local_time.hour >= 23 or local_time.hour < 8
-        multiplier = 4.0 if is_night else 1.0
-        time_spread = self.base_spread_ticks * multiplier * self.tick_size
-        volatility_markup = current_atr * self.volatility_factor
+        multiplier_dec = Decimal("4.0") if is_night else Decimal("1.0")
+
+        # Cast raw inputs to string-based exact decimal instances
+        mid_dec = Decimal(str(mid_price))
+        atr_dec = Decimal(str(current_atr))
+        base_spread_dec = Decimal(str(self.base_spread_ticks))
+        tick_size_dec = Decimal(str(self.tick_size))
+        vol_factor_dec = Decimal(str(self.volatility_factor))
+
+        # Compute dynamic execution prices via high-precision base-10 math
+        time_spread = base_spread_dec * multiplier_dec * tick_size_dec
+        volatility_markup = atr_dec * vol_factor_dec
         total_spread = time_spread + volatility_markup
 
-        half_spread = total_spread / 2.0
-        bid_price = mid_price - half_spread
-        ask_price = mid_price + half_spread
+        half_spread = total_spread / Decimal("2.0")
+        bid_price = float(mid_dec - half_spread)
+        ask_price = float(mid_dec + half_spread)
 
         return MarketPricePoint(
             timestamp=utc_time,
@@ -93,7 +101,9 @@ class DynamicFrictionEngine:
         Returns:
             float: Total calculated fee currency volume value.
         """
-        return float(size * commission_per_lot)
+        size_dec = Decimal(str(size))
+        rate_dec = Decimal(str(commission_per_lot))
+        return float(size_dec * rate_dec)
 
 # =============================================================================
 # -----------------------------------------------------------------------------
