@@ -13,13 +13,12 @@ import pytest
 
 from brokers.backtrader_adapter import BacktraderBrokerAdapter
 from brokers.backtrader_strategy_bridge import BacktraderStrategyBridge
-from core.models import InstrumentSpecification
 from core.models import OrderStatus
 from core.models import OrderType
 from core.models import TransactionSide
-from core.registry import InstrumentRegistry
 from core.models import MarketPricePoint
 from strategies.base_strategy import AbstractStrategy
+from tests.test_constants import TEST_REGISTRY
 
 # =============================================================================
 # -----------------------------------------------------------------------------
@@ -84,19 +83,8 @@ def test_backtrader_cerebro_loop_e2e_execution():
     cerebro.adddata(data_feed)
     cerebro.broker.setcash(10000000.0)
 
-    registry = {
-        "EURUSD": InstrumentSpecification(
-            base_spread_ticks=0.6,
-            tick_size=0.0001,
-            volatility_factor=0.1,
-            lot_size=100000,
-        ),
-    }
-
-    instrument_registry = InstrumentRegistry(specifications=registry)
-
     production_broker = BacktraderBrokerAdapter(
-        instrument_registry=instrument_registry,
+        instrument_registry=TEST_REGISTRY,
     )
 
     bot = IntegrationMeanReversionBot(
@@ -107,7 +95,7 @@ def test_backtrader_cerebro_loop_e2e_execution():
     cerebro.addstrategy(
         BacktraderStrategyBridge,
         aegis_bot=bot,
-        instrument_registry=instrument_registry,
+        instrument_registry=TEST_REGISTRY,
     )
 
     cerebro.run()

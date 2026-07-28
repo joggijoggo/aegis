@@ -10,10 +10,14 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from brokers.base_broker import AbstractBrokerBridge
+from brokers.simulated_adapter import SimulatedBrokerAdapter
+from core.accounts import IsolatedAssetAccount
 from core.models import MarketPricePoint
 from core.models import OrderType
 from core.models import TransactionSide
 from strategies.base_strategy import AbstractStrategy
+from strategies.mean_reversion import AegisMeanReversionBot
+from tests.test_constants import TEST_REGISTRY
 
 # =============================================================================
 # -----------------------------------------------------------------------------
@@ -45,8 +49,6 @@ class DummyBreakoutBot(AbstractStrategy):
 
 def test_base_strategy_raises_value_error_on_unregistered_asset():
     """Validates that a ValueError is raised if a bot trades an unregistered asset."""
-    from strategies.mean_reversion import AegisMeanReversionBot
-
     mock_broker = MagicMock()
     mock_broker.get_instrument_specification.side_effect = ValueError(
         "Asset identity 'UNKNOWN' is missing from instrument registry."
@@ -74,12 +76,11 @@ def test_base_strategy_raises_value_error_on_unregistered_asset():
 
 def test_base_strategy_routes_absolute_prices_for_long_orders():
     """Validates high-level relative pips conversion to absolute prices for LONG."""
-    from brokers.simulated_adapter import SimulatedBrokerAdapter
-    from core.accounts import IsolatedAssetAccount
-    from strategies.mean_reversion import AegisMeanReversionBot
-
     account = IsolatedAssetAccount(asset_pair="EURUSD", initial_capital=10000.0)
-    broker = SimulatedBrokerAdapter(target_account=account)
+    broker = SimulatedBrokerAdapter(
+        target_account=account,
+        instrument_registry=TEST_REGISTRY,
+    )
 
     bot = AegisMeanReversionBot(
         broker_bridge=broker,
@@ -104,12 +105,11 @@ def test_base_strategy_routes_absolute_prices_for_long_orders():
 
 def test_mean_reversion_strategy_execution_flow():
     """Validates active trade routing and comprehensive metrics reporting logs."""
-    from brokers.simulated_adapter import SimulatedBrokerAdapter
-    from core.accounts import IsolatedAssetAccount
-    from strategies.mean_reversion import AegisMeanReversionBot
-
     account = IsolatedAssetAccount(asset_pair="EURUSD", initial_capital=10000.0)
-    broker = SimulatedBrokerAdapter(target_account=account)
+    broker = SimulatedBrokerAdapter(
+        target_account=account,
+        instrument_registry=TEST_REGISTRY,
+    )
 
     bot = AegisMeanReversionBot(
         broker_bridge=broker,
@@ -156,11 +156,11 @@ def test_mean_reversion_strategy_execution_flow():
 
 def test_template_method_warm_up_centralization():
     """Validates that AbstractStrategy enforces the warm-up loop by inheritance."""
-    from brokers.simulated_adapter import SimulatedBrokerAdapter
-    from core.accounts import IsolatedAssetAccount
-
     account = IsolatedAssetAccount(asset_pair="EURUSD", initial_capital=10000.0)
-    broker = SimulatedBrokerAdapter(target_account=account)
+    broker = SimulatedBrokerAdapter(
+        target_account=account,
+        instrument_registry=TEST_REGISTRY,
+    )
 
     bot = DummyBreakoutBot(broker_bridge=broker, warm_up_bars=3)
 

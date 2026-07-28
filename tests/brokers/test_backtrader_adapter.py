@@ -8,25 +8,10 @@ from unittest.mock import MagicMock
 import pytest
 
 from brokers.backtrader_adapter import BacktraderBrokerAdapter
-from core.models import InstrumentSpecification
 from core.models import OrderType
 from core.models import TransactionSide
-from core.registry import InstrumentRegistry
-
-# =============================================================================
-# -----------------------------------------------------------------------------
-# =============================================================================
-
-_TEST_SPECS = {
-    "EURUSD": InstrumentSpecification(
-        base_spread_ticks=0.6,
-        tick_size=0.0001,
-        volatility_factor=0.1,
-        lot_size=100000,
-    ),
-}
-
-TEST_REGISTRY = InstrumentRegistry(specifications=_TEST_SPECS)
+from tests.test_constants import TEST_REGISTRY
+from tests.test_constants import _TEST_SPECS
 
 # =============================================================================
 # -----------------------------------------------------------------------------

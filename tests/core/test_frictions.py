@@ -69,6 +69,33 @@ def test_dynamic_friction_engine_atr_volatility_expansion():
 
 # -----------------------------------------------------------------------------
 
+def test_friction_engine_prevents_ieee754_pricing_matrix_anomalies():
+    """Verify that the friction engine neutralizes float conversion micro-residues.
+
+    With raw floats, subtracting a 0.3 tick spread from a mid price of 1.1543
+    with a tick size of 0.0001 generates a binary noise resulting in 1.1542699999999999.
+    Exact decimal tracking must guarantee a precise bid of 1.154285.
+    """
+    engine = DynamicFrictionEngine(
+        base_spread_ticks=0.3,
+        tick_size=0.0001,
+        volatility_factor=0.0,
+    )
+
+    utc_now = datetime(2026, 3, 25, 12, 0, tzinfo=ZoneInfo("UTC"))
+
+    prices = engine.get_market_prices(
+        utc_time=utc_now,
+        mid_price=1.1543,
+        current_atr=0.0010,
+    )
+
+    # Exact decimal tracking accounts for half-spread divisions (0.00003 / 2 = 0.000015)
+    assert prices.bid == 1.154285
+    assert prices.ask == 1.154315
+
+# -----------------------------------------------------------------------------
+
 def test_dynamic_friction_engine_paris_timezone_handling():
     """Verify seasonal Paris time rollover cutoff logic and dynamic night tariff flags."""
     engine = DynamicFrictionEngine(
