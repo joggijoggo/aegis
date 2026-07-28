@@ -1,12 +1,13 @@
-"""Aegis Framework - Hexagonal Broker Port Layer.
+"""Aegis Framework - Broker Port Interfacing Layer.
 
-Defines the core outbound abstract port for broker agnosticism.
+Defines the outbound interface contracts enforcing broker-agnostic order routing.
 """
 
 from abc import ABC
 from abc import abstractmethod
 from typing import Any
 
+from core.models import InstrumentSpecification
 from core.models import OrderType
 from core.models import TransactionSide
 
@@ -15,7 +16,7 @@ from core.models import TransactionSide
 # =============================================================================
 
 class AbstractBrokerBridge(ABC):
-    """Hexagonal outbound port enforcing unified interface for all broker engines."""
+    """Structural port enforcing absolute boundary order routing constraints."""
 
 # -----------------------------------------------------------------------------
 
@@ -26,33 +27,24 @@ class AbstractBrokerBridge(ABC):
         side: TransactionSide,
         order_type: OrderType,
         volume_lots: float,
-        stop_loss_pips: float | None = None,
-        take_profit_pips: float | None = None
+        stop_loss_price: float,
+        take_profit_price: float
     ) -> dict[str, Any]:
-        """Routes an execution contract request to the target matching engine.
-
-        Args:
-            symbol (str): Target currency pair tracking identifier.
-            side (TransactionSide): Enforced transaction direction enum.
-            order_type (OrderType): Enforced execution constraint type enum.
-            volume_lots (float): Lot size exposure allocation.
-            stop_loss_pips (float | None): Optional protective stop distance.
-            take_profit_pips (float | None): Optional target limit distance.
-
-        Returns:
-            dict[str, Any]: Standardized execution receipt parameters.
-        """
+        """Routes transaction payloads using structural absolute prices levels."""
         pass
 
 # -----------------------------------------------------------------------------
 
     @abstractmethod
     def get_portfolio_snapshot(self) -> dict[str, Any]:
-        """Fetches dynamic localized financial balances and open position nodes.
+        """Fetches unified financial metrics records parameters from the broker."""
+        pass
 
-        Returns:
-            dict[str, Any]: Structure mapping cash, equity, and active trades.
-        """
+# -----------------------------------------------------------------------------
+
+    @abstractmethod
+    def get_instrument_specification(self, symbol: str) -> InstrumentSpecification:
+        """Fetches contract specifications for a specific financial instrument."""
         pass
 
 # =============================================================================

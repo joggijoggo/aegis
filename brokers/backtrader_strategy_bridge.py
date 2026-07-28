@@ -1,0 +1,147 @@
+"""Aegis Framework - Backtrader Strategy Inbound Ingestion Bridge.
+
+Connects Backtrader lifecycle event loops directly to Aegis strategy brains.
+"""
+
+from typing import Any
+
+import backtrader as bt
+
+from brokers.backtrader_adapter import BacktraderBrokerAdapter
+from core.models import MarketPricePoint
+from core.models import OrderEvent
+from core.models import OrderStatus
+from core.models import PositionCloseEvent
+from core.models import TransactionSide
+
+# =============================================================================
+# -----------------------------------------------------------------------------
+# =============================================================================
+
+class BacktraderStrategyBridge(bt.Strategy):
+    """Inbound orchestration bridge translating timeline ticks to Aegis models."""
+
+# -----------------------------------------------------------------------------
+
+    def __init__(self, aegis_bot: Any):
+        """Initializes the event broker bridge linking active quantitative nodes.
+
+        Args:
+            aegis_bot (Any): Target instance of an Aegis abstract strategy bot.
+        """
+        self.aegis_bot = aegis_bot
+
+        # Extract instrument specs stored into the initial broker to preserve context
+        specs_ref = getattr(self.aegis_bot.broker, "_instrument_specs", {})
+
+        # Hot-wire the hexagonal architecture loop by binding production adapter
+        self.aegis_bot.broker = BacktraderBrokerAdapter(
+            bt_strategy=self,
+            instrument_specs=specs_ref,
+        )
+
+# -----------------------------------------------------------------------------
+
+    def next(self) -> None:
+        """Evaluates ongoing terminal intervals ticks released by Cerebro loops."""
+        # 1. Capture exact timeline timestamp parameters from Backtrader line tracking
+        current_dt = self.data.datetime.datetime(0)
+        mid_price = self.data.close[0]
+
+        # 2. Simulate standard asset pricing matrix offsets parameters
+        # Note: Will leverage dynamic IGFrictionEngine linkage during Jalon 5 expansion
+        bid_price = mid_price - 0.0001
+        ask_price = mid_price + 0.0001
+
+        # 3. Dynamic sliding window extraction layer routing for warm-up buffers
+        current_buffer_size = len(self)
+        historical_closes = self.data.close.get(size=current_buffer_size)
+
+        # 4. Instantiation of unified immutable market models containers snapshot
+        price_snapshot = MarketPricePoint(
+            timestamp=current_dt,
+            mid_price=mid_price,
+            bid=bid_price,
+            ask=ask_price,
+            current_atr=0.0010,
+        )
+
+        # 5. Route structured parameters packets to the Aegis decision loop
+        self.aegis_bot.on_bar_close(
+            asset="EURUSD",
+            price_snapshot=price_snapshot,
+            historical_closes=historical_closes,
+        )
+
+# -----------------------------------------------------------------------------
+
+    def notify_order(self, order: bt.Order) -> None:
+        """Intercepts and routes asynchronous carnet order lifecycle changes.
+
+        Args:
+            order (bt.Order): Native Backtrader order instance tracking payload.
+        """
+        if order.status == bt.Order.Completed:
+            status_enum = OrderStatus.COMPLETED
+        elif order.status in (bt.Order.Rejected, bt.Order.Margin, bt.Order.Canceled):
+            status_enum = OrderStatus.REJECTED
+        else:
+            return
+
+        side_enum = TransactionSide.LONG if order.isbuy() else TransactionSide.SHORT
+        event_dt = self.data.datetime.datetime(0)
+
+        event = OrderEvent(
+            order_id=order.ref,
+            symbol="EURUSD",
+            status=status_enum,
+            side=side_enum,
+            executed_price=float(order.executed.price) if order.status == bt.Order.Completed else 0.0,
+            executed_size=int(order.executed.size),
+            timestamp=event_dt,
+        )
+
+        self.aegis_bot.order_events.append(event)
+
+# -----------------------------------------------------------------------------
+
+    def notify_trade(self, trade: bt.Trade) -> None:
+        """Intercepts finalized trades to extract closed position performance logs.
+
+        Args:
+            trade (bt.Trade): Native Backtrader closed position tracking record.
+        """
+        # 1. Filter out transient open or partial execution intervals states
+        if not trade.isclosed:
+            return
+
+        # 2. Map Backtrader internal metrics parameters to core domain enums
+        side_enum = TransactionSide.LONG if trade.long else TransactionSide.SHORT
+
+        # 3. Extract native temporal and structural ledger properties
+        pnl_gross = float(trade.pnl)
+        pnl_net = float(trade.pnlcomm)
+        commission = float(trade.commission)
+        bars_duration = int(trade.barlen)
+
+        # 4. Safely convert Backtrader float timestamps to Python datetime objects
+        t_entry = bt.num2date(trade.dtopen)
+        t_exit = bt.num2date(trade.dtclose)
+
+        # 5. Construct the unified immutable position closure audit snapshot
+        event = PositionCloseEvent(
+            symbol="EURUSD",
+            side=side_enum,
+            pnl_gross=pnl_gross,
+            pnl_net=pnl_net,
+            commission=commission,
+            bars_duration=bars_duration,
+            entry_timestamp=t_entry,
+            exit_timestamp=t_exit,
+        )
+
+        self.aegis_bot.position_close_events.append(event)
+
+# =============================================================================
+# -----------------------------------------------------------------------------
+# =============================================================================

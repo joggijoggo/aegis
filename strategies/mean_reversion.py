@@ -22,7 +22,10 @@ class AegisMeanReversionBot(AbstractStrategy):
 
     def __init__(self, broker_bridge: AbstractBrokerBridge, warm_up_bars: int = 200):
         """Initializes the target statistical tracking matrices and ledger arrays."""
-        super().__init__(broker_bridge=broker_bridge, warm_up_bars=warm_up_bars)
+        super().__init__(
+            broker_bridge=broker_bridge,
+            warm_up_bars=warm_up_bars,
+        )
         self.classifier = MarketRegimeClassifier()
         self.telemetry_history: list[TradeTelemetrySnapshot] = []
 
@@ -52,11 +55,12 @@ class AegisMeanReversionBot(AbstractStrategy):
             self.telemetry_history.append(snapshot)
 
             # Route standardized order receipts structures to the ledger port
-            self.broker.place_order(
+            self.place_bracket_order(
                 symbol=asset,
                 side=TransactionSide.SHORT,
                 order_type=OrderType.MARKET,
                 volume_lots=1.0,
+                current_price=price_snapshot.mid_price,
                 stop_loss_pips=20.0,
                 take_profit_pips=40.0
             )
