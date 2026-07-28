@@ -22,8 +22,8 @@ class DynamicFrictionEngine:
     def __init__(
         self,
         base_spread_ticks: float,
-        tick_size: float = 0.0001,
-        volatility_factor: float = 0.1,
+        tick_size: float,
+        volatility_factor: float,
     ):
         """Initializes the pricing friction simulator.
 

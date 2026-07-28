@@ -7,11 +7,31 @@ from datetime import datetime
 
 from zoneinfo import ZoneInfo
 
+import pytest
+
 from core.frictions import DynamicFrictionEngine
 
 # =============================================================================
 # -----------------------------------------------------------------------------
 # =============================================================================
+
+def test_dynamic_friction_engine_strict_constructor_contract():
+    """Verify that omitting required parameters raises strict initialization errors."""
+    # CASE 1: Attempt instantiating without tick_size parameter
+    with pytest.raises(TypeError):
+        DynamicFrictionEngine(
+            base_spread_ticks=0.6,
+            volatility_factor=0.1,
+        )
+
+    # CASE 2: Attempt instantiating without volatility_factor parameter
+    with pytest.raises(TypeError):
+        DynamicFrictionEngine(
+            base_spread_ticks=0.6,
+            tick_size=0.0001,
+        )
+
+# -----------------------------------------------------------------------------
 
 def test_dynamic_friction_engine_atr_volatility_expansion():
     """Verify spread expansion scaling driven by rolling ATR volatility metrics."""
@@ -34,7 +54,11 @@ def test_dynamic_friction_engine_atr_volatility_expansion():
 
 def test_dynamic_friction_engine_paris_timezone_handling():
     """Verify seasonal Paris time rollover cutoff logic and dynamic night tariff flags."""
-    engine = DynamicFrictionEngine(base_spread_ticks=0.6, tick_size=0.0001)
+    engine = DynamicFrictionEngine(
+        base_spread_ticks=0.6,
+        tick_size=0.0001,
+        volatility_factor=0.1,
+    )
 
     # CASE 1: Winter Time (March) -> 22:55 Paris time (21:55 UTC) is STILL DAY
     t_winter_day = datetime(2026, 3, 25, 21, 55, tzinfo=ZoneInfo('UTC'))
@@ -84,6 +108,7 @@ def test_dynamic_friction_engine_timezone_widening():
     engine = DynamicFrictionEngine(
         base_spread_ticks=0.6,
         tick_size=0.0001,
+        volatility_factor=0.1,
     )
 
     # Test Case 1: Standard liquid hours (14:00 UTC) with zero volatility
