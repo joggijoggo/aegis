@@ -15,29 +15,11 @@ import pytest
 
 from brokers.backtrader_adapter import BacktraderBrokerAdapter
 from brokers.backtrader_strategy_bridge import BacktraderStrategyBridge
-from core.models import InstrumentSpecification
 from core.models import MarketPricePoint
 from core.models import OrderStatus
 from core.models import TransactionSide
-from core.registry import InstrumentRegistry
 from strategies.base_strategy import AbstractStrategy
-
-# =============================================================================
-# -----------------------------------------------------------------------------
-# =============================================================================
-
-_TEST_SPECS = {
-    "EURUSD": InstrumentSpecification(
-        base_spread_ticks=0.6,
-        lot_size=100000,
-        lot_step=0.01,
-        min_lot=0.10,
-        tick_size=0.0001,
-        volatility_factor=0.1,
-    ),
-}
-
-TEST_REGISTRY = InstrumentRegistry(specifications=_TEST_SPECS)
+from tests.test_constants import TEST_REGISTRY
 
 # =============================================================================
 # -----------------------------------------------------------------------------
