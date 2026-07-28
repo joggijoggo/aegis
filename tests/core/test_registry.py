@@ -21,15 +21,19 @@ def test_instrument_registry_fetches_contract_specifications():
     # 1. Setup frozen asset specification metadata mapping
     spec_eurusd = InstrumentSpecification(
         base_spread_ticks=0.6,
+        lot_size=100000,
+        lot_step=0.01,
+        min_lot=0.10,
         tick_size=0.0001,
         volatility_factor=0.1,
-        lot_size=100000,
     )
     spec_fr40 = InstrumentSpecification(
         base_spread_ticks=1.0,
+        lot_size=1000,
+        lot_step=0.1,
+        min_lot=0.1,
         tick_size=1.0,
         volatility_factor=0.0,
-        lot_size=1,
     )
 
     configs = {

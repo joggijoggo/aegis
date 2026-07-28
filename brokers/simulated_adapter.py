@@ -86,9 +86,11 @@ class SimulatedBrokerAdapter(AbstractBrokerBridge):
         """
         return InstrumentSpecification(
             base_spread_ticks=0.6,
+            lot_size=100000,
+            lot_step=0.01,
+            min_lot=0.10,
             tick_size=0.0001,
             volatility_factor=0.1,
-            lot_size=100000,
         )
 
 # =============================================================================
