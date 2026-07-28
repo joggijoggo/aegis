@@ -45,6 +45,8 @@ class InstrumentSpecification:
         base_spread_ticks: The structural minimum cost measured in ticks.
         lot_size: The absolute quantity of underlying assets per standard contract.
         lot_step: The minimum contract fractional increments permitted by the broker.
+        margin_requirement: The percentage of total nominal exposure required
+            as margin liquidity, expressed as a decimal.
         min_lot: The absolute minimum trade volume threshold enforced for orders.
         tick_size: The minimum price movement allowed for the asset.
         volatility_factor: The multiplier adjusting the standard deviation.
@@ -52,6 +54,7 @@ class InstrumentSpecification:
     base_spread_ticks: float
     lot_size: int
     lot_step: float
+    margin_requirement: float
     min_lot: float
     tick_size: float
     volatility_factor: float
