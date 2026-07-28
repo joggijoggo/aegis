@@ -1,4 +1,4 @@
-"""Aegis Framework - IG Group Friction Unit Tests.
+"""Aegis Framework - Financial Friction Models Unit Tests.
 
 Enforces TDD validation protocols onto the dynamic pricing and spread layers.
 """
@@ -7,15 +7,15 @@ from datetime import datetime
 
 from zoneinfo import ZoneInfo
 
-from core.frictions import IGGroupFrictionEngine
+from core.frictions import DynamicFrictionEngine
 
 # =============================================================================
 # -----------------------------------------------------------------------------
 # =============================================================================
 
-def test_ig_friction_engine_atr_volatility_expansion():
+def test_dynamic_friction_engine_atr_volatility_expansion():
     """Verify spread expansion scaling driven by rolling ATR volatility metrics."""
-    engine = IGGroupFrictionEngine(
+    engine = DynamicFrictionEngine(
         base_spread_ticks=0.6,
         tick_size=0.0001,
         volatility_factor=0.1,
@@ -32,12 +32,9 @@ def test_ig_friction_engine_atr_volatility_expansion():
 
 # -----------------------------------------------------------------------------
 
-def test_ig_friction_engine_paris_timezone_handling():
+def test_dynamic_friction_engine_paris_timezone_handling():
     """Verify seasonal Paris time rollover cutoff logic and dynamic night tariff flags."""
-    engine = IGGroupFrictionEngine(
-        base_spread_ticks=0.6,
-        tick_size=0.0001,
-    )
+    engine = DynamicFrictionEngine(base_spread_ticks=0.6, tick_size=0.0001)
 
     # CASE 1: Winter Time (March) -> 22:55 Paris time (21:55 UTC) is STILL DAY
     t_winter_day = datetime(2026, 3, 25, 21, 55, tzinfo=ZoneInfo('UTC'))
@@ -81,10 +78,10 @@ def test_ig_friction_engine_paris_timezone_handling():
 
 # -----------------------------------------------------------------------------
 
-def test_ig_friction_engine_timezone_widening():
+def test_dynamic_friction_engine_timezone_widening():
     """Validates dynamic spread calculation and local London cutoff penalties."""
     # Base spread of 0.6 pips, where 1 pip = 0.0001
-    engine = IGGroupFrictionEngine(
+    engine = DynamicFrictionEngine(
         base_spread_ticks=0.6,
         tick_size=0.0001,
     )

@@ -1,7 +1,7 @@
-"""Aegis Framework - IG Group Financial Friction Models.
+"""Aegis Framework - Financial Friction Models.
 
 Simulates volatility-adjusted dynamic spreads and localized interbank liquidity
-drain markup penalties tailored to modern FX clearing conditions.
+drain markup penalties tailored to modern clearing conditions.
 """
 
 from datetime import datetime
@@ -14,8 +14,8 @@ from core.models import MarketPricePoint
 # -----------------------------------------------------------------------------
 # =============================================================================
 
-class IGGroupFrictionEngine:
-    """Emulates dynamic spreads and interbank rollover constraints of IG Market."""
+class DynamicFrictionEngine:
+    """Emulates dynamic spreads and interbank rollover constraints."""
 
 # -----------------------------------------------------------------------------
 
@@ -36,7 +36,6 @@ class IGGroupFrictionEngine:
         self.base_spread_ticks = base_spread_ticks
         self.tick_size = tick_size
         self.volatility_factor = volatility_factor
-        self.london_tz = ZoneInfo('Europe/London')
 
 # -----------------------------------------------------------------------------
 
