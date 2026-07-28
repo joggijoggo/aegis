@@ -13,6 +13,25 @@ from core.frictions import IGGroupFrictionEngine
 # -----------------------------------------------------------------------------
 # =============================================================================
 
+def test_ig_friction_engine_atr_volatility_expansion():
+    """Verify spread expansion scaling driven by rolling ATR volatility metrics."""
+    engine = IGGroupFrictionEngine(
+        base_spread_pips=0.6,
+        pip_value=0.0001,
+        volatility_factor=0.1
+    )
+
+    # CASE 1: Day Time (14:00 UTC) with high volatility (ATR = 20 pips)
+    t_day_volatile = datetime(2026, 3, 25, 14, 0, tzinfo=ZoneInfo('UTC'))
+    prices_volatile = engine.get_market_prices(
+        utc_time=t_day_volatile,
+        mid_price=1.0800,
+        current_atr=0.0020
+    )
+    assert round(prices_volatile.ask - prices_volatile.bid, 5) == 0.00026
+
+# -----------------------------------------------------------------------------
+
 def test_ig_friction_engine_paris_timezone_handling():
     """Verify seasonal Paris time rollover cutoff logic and dynamic night tariff flags."""
     engine = IGGroupFrictionEngine(base_spread_pips=0.6, pip_value=0.0001)
