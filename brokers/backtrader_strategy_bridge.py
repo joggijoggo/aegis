@@ -15,6 +15,7 @@ from core.models import OrderEvent
 from core.models import OrderStatus
 from core.models import PositionCloseEvent
 from core.models import TransactionSide
+from core.registry import InstrumentRegistry
 
 # =============================================================================
 # -----------------------------------------------------------------------------
@@ -25,31 +26,38 @@ class BacktraderStrategyBridge(bt.Strategy):
 
 # -----------------------------------------------------------------------------
 
-    def __init__(self, aegis_bot: Any):
+    def __init__(self, aegis_bot: Any, instrument_registry: InstrumentRegistry):
         """Initializes the event broker bridge linking active quantitative nodes.
 
         Args:
             aegis_bot (Any): Target instance of an Aegis abstract strategy bot.
+            instrument_registry (InstrumentRegistry): Central domain repository.
         """
         self.aegis_bot = aegis_bot
+        self.instrument_registry = instrument_registry
 
-        # Extract instrument specs stored into the initial broker to preserve context
-        specs_ref = getattr(self.aegis_bot.broker, "_instrument_specs")
-
-        # Hot-wire the hexagonal architecture loop by binding production adapter
-        self.aegis_bot.broker = BacktraderBrokerAdapter(
-            bt_strategy=self,
-            instrument_specs=specs_ref,
-        )
+        # DEVIATION NOTE: BACKTRADER BOUNDARY EXCLUSION & LATE RUNTIME BINDING
+        # ---------------------------------------------------------------------
+        # Backtrader uses a rigid execution model where order placement requires
+        # direct access to an active bt.Strategy instance context.
+        #
+        # In an ideal clean architecture, Inbound Ingestion Gates (this bridge)
+        # and Outbound Order Bridges (the Broker Adapter) must be totally isolated.
+        #
+        # To avoid the anti-pattern of the inbound loop aggressively modifying
+        # the bot dependency tree, we implement a explicit late binding routine.
+        # If the bot uses a BacktraderBrokerAdapter instance, we dynamically link
+        # this executing context using its dedicated set_strategy() method.
+        # This isolates the framework-specific hack away from the core domain,
+        # maintaining an acyclic compile-time import tree.
+        #
+        # TODO(DEVELOPMENT): Move this late runtime linkage out into a neutral
+        # SessionRunner orchestrator wrapper to achieve perfect component isolation.
+        if isinstance(self.aegis_bot.broker, BacktraderBrokerAdapter):
+            self.aegis_bot.broker.set_strategy(bt_strategy=self)
 
         target_symbol = self.data._name
-
-        if target_symbol not in specs_ref:
-            raise ValueError(
-                f"Critical error: '{target_symbol}' specifications missing from registry."
-            )
-
-        spec = specs_ref[target_symbol]
+        spec = self.instrument_registry.get_specification(target_symbol)
 
         self.friction_engine = DynamicFrictionEngine(
             base_spread_ticks=spec.base_spread_ticks,

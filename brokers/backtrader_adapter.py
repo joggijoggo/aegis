@@ -9,6 +9,7 @@ from brokers.base_broker import AbstractBrokerBridge
 from core.models import InstrumentSpecification
 from core.models import OrderType
 from core.models import TransactionSide
+from core.registry import InstrumentRegistry
 
 # =============================================================================
 # -----------------------------------------------------------------------------
@@ -19,15 +20,25 @@ class BacktraderBrokerAdapter(AbstractBrokerBridge):
 
 # -----------------------------------------------------------------------------
 
-    def __init__(self, bt_strategy: Any, instrument_specs: dict[str, InstrumentSpecification]):
+    def __init__(self, instrument_registry: InstrumentRegistry, bt_strategy: Any = None):
         """Initializes the adapter anchored to an active Backtrader strategy.
 
         Args:
-            bt_strategy (Any): Active instance of a bt.Strategy object.
-            instrument_specs (dict[str, InstrumentSpecification]): Enforced parameters.
+            instrument_registry (InstrumentRegistry): Enforced domain registry.
+            bt_strategy (Any, optional): Active instance of a bt.Strategy object.
         """
         self.strategy = bt_strategy
-        self._instrument_specs = instrument_specs
+        self._instrument_registry = instrument_registry
+
+# -----------------------------------------------------------------------------
+
+    def set_strategy(self, bt_strategy: Any) -> None:
+        """Binds the active Backtrader execution context to this adapter.
+
+        Args:
+            bt_strategy (Any): Active instance of a bt.Strategy object.
+        """
+        self.strategy = bt_strategy
 
 # -----------------------------------------------------------------------------
 
@@ -38,7 +49,7 @@ class BacktraderBrokerAdapter(AbstractBrokerBridge):
         order_type: OrderType,
         volume_lots: float,
         stop_loss_price: float,
-        take_profit_price: float
+        take_profit_price: float,
     ) -> dict[str, Any]:
         """Routes an order request directly to Backtrader using absolute prices.
 
@@ -54,7 +65,7 @@ class BacktraderBrokerAdapter(AbstractBrokerBridge):
             dict[str, Any]: Standardized execution receipt parameters.
         """
         entry_price = self.strategy.data.close
-        spec = self.get_instrument_specification(symbol)
+        spec = self.get_instrument_specification(symbol=symbol)
         size_units = int(volume_lots * spec.lot_size)
 
         if side == TransactionSide.LONG:
@@ -62,14 +73,14 @@ class BacktraderBrokerAdapter(AbstractBrokerBridge):
                 price=entry_price,
                 stopprice=stop_loss_price,
                 limitprice=take_profit_price,
-                size=size_units
+                size=size_units,
             )
         else:
             self.strategy.sell_bracket(
                 price=entry_price,
                 stopprice=stop_loss_price,
                 limitprice=take_profit_price,
-                size=size_units
+                size=size_units,
             )
 
         return {
@@ -77,7 +88,7 @@ class BacktraderBrokerAdapter(AbstractBrokerBridge):
             "symbol": symbol,
             "side": side,
             "order_type": order_type,
-            "volume_lots": volume_lots
+            "volume_lots": volume_lots,
         }
 
 # -----------------------------------------------------------------------------
@@ -90,28 +101,21 @@ class BacktraderBrokerAdapter(AbstractBrokerBridge):
         """
         return {
             "balance": float(self.strategy.broker.get_cash()),
-            "equity": float(self.strategy.broker.get_value())
+            "equity": float(self.strategy.broker.get_value()),
         }
 
 # -----------------------------------------------------------------------------
 
     def get_instrument_specification(self, symbol: str) -> InstrumentSpecification:
-        """Fetches contract specifications from the local backtest registry.
+        """Fetches contract specifications from the central domain registry.
 
         Args:
             symbol (str): Target financial asset symbol tracking identifier.
 
         Returns:
             InstrumentSpecification: Typed immutable contract specifications.
-
-        Raises:
-            ValueError: If the target asset symbol is not registered.
         """
-        if symbol not in self._instrument_specs:
-            raise ValueError(
-                f"Asset identity '{symbol}' is missing from instrument registry."
-            )
-        return self._instrument_specs[symbol]
+        return self._instrument_registry.get_specification(symbol=symbol)
 
 # =============================================================================
 # -----------------------------------------------------------------------------

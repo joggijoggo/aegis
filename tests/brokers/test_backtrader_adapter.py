@@ -5,14 +5,50 @@ Verifies bracket pricing conversions, market routing layers, and contract parame
 
 from unittest.mock import MagicMock
 
+import pytest
+
 from brokers.backtrader_adapter import BacktraderBrokerAdapter
 from core.models import InstrumentSpecification
 from core.models import OrderType
 from core.models import TransactionSide
+from core.registry import InstrumentRegistry
 
 # =============================================================================
 # -----------------------------------------------------------------------------
 # =============================================================================
+
+_TEST_SPECS = {
+    "EURUSD": InstrumentSpecification(
+        base_spread_ticks=0.6,
+        tick_size=0.0001,
+        volatility_factor=0.1,
+        lot_size=100000,
+    ),
+}
+
+TEST_REGISTRY = InstrumentRegistry(specifications=_TEST_SPECS)
+
+# =============================================================================
+# -----------------------------------------------------------------------------
+# =============================================================================
+
+def test_backtrader_adapter_fetches_instrument_specifications():
+    """Verify that the outbound adapter routes registry lookups cleanly."""
+    mock_bt_strategy = MagicMock()
+
+    adapter = BacktraderBrokerAdapter(
+        bt_strategy=mock_bt_strategy,
+        instrument_registry=TEST_REGISTRY,
+    )
+
+    assert (
+        adapter.get_instrument_specification(symbol="EURUSD") is _TEST_SPECS["EURUSD"]
+    )
+
+    with pytest.raises(ValueError, match="is missing from central instrument registry"):
+        adapter.get_instrument_specification(symbol="UNKNOWN")
+
+# -----------------------------------------------------------------------------
 
 def test_backtrader_adapter_fetches_portfolio_balances_snapshot():
     """Validates financial tracking indirection routing balances snapshots."""
@@ -22,7 +58,7 @@ def test_backtrader_adapter_fetches_portfolio_balances_snapshot():
 
     adapter = BacktraderBrokerAdapter(
         bt_strategy=mock_bt_strategy,
-        instrument_specs={},
+        instrument_registry=TEST_REGISTRY,
     )
 
     snapshot = adapter.get_portfolio_snapshot()
@@ -36,18 +72,9 @@ def test_backtrader_adapter_routes_absolute_bracket_prices_for_long():
     mock_bt_strategy = MagicMock()
     mock_bt_strategy.data.close = 1.1000
 
-    registry: dict[str, InstrumentSpecification] = {
-        "EURUSD": InstrumentSpecification(
-            base_spread_ticks=0.6,
-            tick_size=0.0001,
-            volatility_factor=0.1,
-            lot_size=100000,
-        ),
-    }
-
     adapter = BacktraderBrokerAdapter(
         bt_strategy=mock_bt_strategy,
-        instrument_specs=registry,
+        instrument_registry=TEST_REGISTRY,
     )
 
     receipt = adapter.place_order(
@@ -79,18 +106,9 @@ def test_backtrader_adapter_routes_absolute_bracket_prices_for_short():
     mock_bt_strategy.broker.get_cash.return_value = 10000.0
     mock_bt_strategy.broker.get_value.return_value = 10000.0
 
-    registry: dict[str, InstrumentSpecification] = {
-        "EURUSD": InstrumentSpecification(
-            base_spread_ticks=0.6,
-            tick_size=0.0001,
-            volatility_factor=0.1,
-            lot_size=100000,
-        ),
-    }
-
     adapter = BacktraderBrokerAdapter(
         bt_strategy=mock_bt_strategy,
-        instrument_specs=registry,
+        instrument_registry=TEST_REGISTRY,
     )
 
     receipt = adapter.place_order(

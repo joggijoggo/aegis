@@ -13,12 +13,29 @@ import backtrader as bt
 import pandas as pd
 import pytest
 
+from brokers.backtrader_adapter import BacktraderBrokerAdapter
 from brokers.backtrader_strategy_bridge import BacktraderStrategyBridge
 from core.models import InstrumentSpecification
 from core.models import MarketPricePoint
 from core.models import OrderStatus
 from core.models import TransactionSide
+from core.registry import InstrumentRegistry
 from strategies.base_strategy import AbstractStrategy
+
+# =============================================================================
+# -----------------------------------------------------------------------------
+# =============================================================================
+
+_TEST_SPECS = {
+    "EURUSD": InstrumentSpecification(
+        base_spread_ticks=0.6,
+        tick_size=0.0001,
+        volatility_factor=0.1,
+        lot_size=100000,
+    ),
+}
+
+TEST_REGISTRY = InstrumentRegistry(specifications=_TEST_SPECS)
 
 # =============================================================================
 # -----------------------------------------------------------------------------
@@ -76,20 +93,19 @@ def test_backtrader_bridge_captures_order_lifecycle():
     cerebro = bt.Cerebro()
     cerebro.adddata(data_feed)
 
-    mock_initial_broker = MagicMock()
-    registry = {
-        "EURUSD": InstrumentSpecification(
-            base_spread_ticks=0.6,
-            tick_size=0.0001,
-            volatility_factor=0.1,
-            lot_size=100000,
-        ),
-    }
-    mock_initial_broker._instrument_specs = registry
+    mock_bt_strategy = MagicMock()
+    production_broker = BacktraderBrokerAdapter(
+        bt_strategy=mock_bt_strategy,
+        instrument_registry=TEST_REGISTRY,
+    )
 
-    bot = MockAegisBot(broker_bridge=mock_initial_broker, warm_up_bars=1)
+    bot = MockAegisBot(broker_bridge=production_broker, warm_up_bars=1)
 
-    cerebro.addstrategy(BacktraderStrategyBridge, aegis_bot=bot)
+    cerebro.addstrategy(
+        BacktraderStrategyBridge,
+        aegis_bot=bot,
+        instrument_registry=TEST_REGISTRY,
+    )
     strategies = cerebro.run()
     active_bridge = strategies[0]
 
@@ -154,20 +170,19 @@ def test_backtrader_bridge_captures_trade_closure():
     cerebro = bt.Cerebro()
     cerebro.adddata(data_feed)
 
-    mock_initial_broker = MagicMock()
-    registry = {
-        "EURUSD": InstrumentSpecification(
-            base_spread_ticks=0.6,
-            tick_size=0.0001,
-            volatility_factor=0.1,
-            lot_size=100000,
-        ),
-    }
-    mock_initial_broker._instrument_specs = registry
+    mock_bt_strategy = MagicMock()
+    production_broker = BacktraderBrokerAdapter(
+        bt_strategy=mock_bt_strategy,
+        instrument_registry=TEST_REGISTRY,
+    )
 
-    bot = MockAegisBot(broker_bridge=mock_initial_broker, warm_up_bars=1)
+    bot = MockAegisBot(broker_bridge=production_broker, warm_up_bars=1)
 
-    cerebro.addstrategy(BacktraderStrategyBridge, aegis_bot=bot)
+    cerebro.addstrategy(
+        BacktraderStrategyBridge,
+        aegis_bot=bot,
+        instrument_registry=TEST_REGISTRY,
+    )
     strategies = cerebro.run()
     active_bridge = strategies[0]
 
@@ -230,20 +245,19 @@ def test_backtrader_bridge_feeds_warm_up_and_triggers_strategy():
     cerebro = bt.Cerebro()
     cerebro.adddata(data_feed)
 
-    mock_initial_broker = MagicMock()
-    registry = {
-        "EURUSD": InstrumentSpecification(
-            base_spread_ticks=0.6,
-            tick_size=0.0001,
-            volatility_factor=0.1,
-            lot_size=100000,
-        ),
-    }
-    mock_initial_broker._instrument_specs = registry
+    mock_bt_strategy = MagicMock()
+    production_broker = BacktraderBrokerAdapter(
+        bt_strategy=mock_bt_strategy,
+        instrument_registry=TEST_REGISTRY,
+    )
 
-    bot = MockAegisBot(broker_bridge=mock_initial_broker, warm_up_bars=10)
+    bot = MockAegisBot(broker_bridge=production_broker, warm_up_bars=10)
 
-    cerebro.addstrategy(BacktraderStrategyBridge, aegis_bot=bot)
+    cerebro.addstrategy(
+        BacktraderStrategyBridge,
+        aegis_bot=bot,
+        instrument_registry=TEST_REGISTRY,
+    )
     cerebro.run()
 
     assert bot.is_warmed_up is True
@@ -274,20 +288,20 @@ def test_backtrader_bridge_propagates_dynamic_friction_metrics():
     cerebro = bt.Cerebro()
     cerebro.adddata(data_feed)
 
-    mock_initial_broker = MagicMock()
-    mock_spec = InstrumentSpecification(
-        base_spread_ticks=0.6,
-        tick_size=0.0001,
-        volatility_factor=0.1,
-        lot_size=100000,
+    mock_bt_strategy = MagicMock()
+    production_broker = BacktraderBrokerAdapter(
+        bt_strategy=mock_bt_strategy,
+        instrument_registry=TEST_REGISTRY,
     )
-    mock_initial_broker._instrument_specs = {
-        "EURUSD": mock_spec,
-    }
-    bot = MockAegisBot(broker_bridge=mock_initial_broker, warm_up_bars=1)
+
+    bot = MockAegisBot(broker_bridge=production_broker, warm_up_bars=1)
     bot.on_bar_close = MagicMock()
 
-    cerebro.addstrategy(BacktraderStrategyBridge, aegis_bot=bot)
+    cerebro.addstrategy(
+        BacktraderStrategyBridge,
+        aegis_bot=bot,
+        instrument_registry=TEST_REGISTRY,
+    )
     cerebro.run()
 
     assert bot.on_bar_close.called is True
@@ -299,6 +313,7 @@ def test_backtrader_bridge_propagates_dynamic_friction_metrics():
     assert isinstance(price_snapshot.current_atr, float) is True
     assert price_snapshot.timestamp.tzinfo is not None
     assert str(price_snapshot.timestamp.tzinfo) == "UTC"
+
 # -----------------------------------------------------------------------------
 
 def test_backtrader_bridge_raises_value_error_on_unregistered_asset():
@@ -318,26 +333,25 @@ def test_backtrader_bridge_raises_value_error_on_unregistered_asset():
         lines = ('atr',)
         params = (('atr', -1),)
 
-    # Ingest an asset name intentionally omitted from the core broker register
     data_feed = PandasDataWithATR(dataname=df, name="UNKNOWN_ASSET")
 
     cerebro = bt.Cerebro()
     cerebro.adddata(data_feed)
 
-    mock_initial_broker = MagicMock()
-    mock_initial_broker._instrument_specs = {
-        "EURUSD": InstrumentSpecification(
-            base_spread_ticks=0.6,
-            tick_size=0.0001,
-            volatility_factor=0.1,
-            lot_size=100000,
-        ),
-    }
+    mock_bt_strategy = MagicMock()
+    production_broker = BacktraderBrokerAdapter(
+        bt_strategy=mock_bt_strategy,
+        instrument_registry=TEST_REGISTRY,
+    )
 
-    bot = MockAegisBot(broker_bridge=mock_initial_broker, warm_up_bars=1)
+    bot = MockAegisBot(broker_bridge=production_broker, warm_up_bars=1)
 
-    with pytest.raises(ValueError, match="specifications missing from registry"):
-        cerebro.addstrategy(BacktraderStrategyBridge, aegis_bot=bot)
+    with pytest.raises(ValueError, match="is missing from central instrument registry"):
+        cerebro.addstrategy(
+            BacktraderStrategyBridge,
+            aegis_bot=bot,
+            instrument_registry=TEST_REGISTRY,
+        )
         cerebro.run()
 
 # =============================================================================

@@ -6,7 +6,6 @@ Validates full loop execution from data ingestion to absolute order settlement.
 from datetime import datetime
 from datetime import timedelta
 from typing import Any
-from unittest.mock import MagicMock
 
 import backtrader as bt
 import pandas as pd
@@ -18,6 +17,7 @@ from core.models import InstrumentSpecification
 from core.models import OrderStatus
 from core.models import OrderType
 from core.models import TransactionSide
+from core.registry import InstrumentRegistry
 from core.models import MarketPricePoint
 from strategies.base_strategy import AbstractStrategy
 
@@ -84,7 +84,6 @@ def test_backtrader_cerebro_loop_e2e_execution():
     cerebro.adddata(data_feed)
     cerebro.broker.setcash(10000000.0)
 
-    mock_setup_broker = MagicMock()
     registry = {
         "EURUSD": InstrumentSpecification(
             base_spread_ticks=0.6,
@@ -93,14 +92,25 @@ def test_backtrader_cerebro_loop_e2e_execution():
             lot_size=100000,
         ),
     }
-    mock_setup_broker._instrument_specs = registry
 
-    bot = IntegrationMeanReversionBot(broker_bridge=mock_setup_broker, warm_up_bars=15)
+    instrument_registry = InstrumentRegistry(specifications=registry)
 
-    cerebro.addstrategy(BacktraderStrategyBridge, aegis_bot=bot)
+    production_broker = BacktraderBrokerAdapter(
+        instrument_registry=instrument_registry,
+    )
 
-    strategies = cerebro.run()
-    active_bridge = strategies[0]
+    bot = IntegrationMeanReversionBot(
+        broker_bridge=production_broker,
+        warm_up_bars=15,
+    )
+
+    cerebro.addstrategy(
+        BacktraderStrategyBridge,
+        aegis_bot=bot,
+        instrument_registry=instrument_registry,
+    )
+
+    cerebro.run()
 
     assert bot.is_warmed_up is True
     assert bot.trade_executed is True
@@ -114,12 +124,8 @@ def test_backtrader_cerebro_loop_e2e_execution():
     assert first_execution.side == TransactionSide.LONG
     assert first_execution.executed_size == 100000
 
-    adapter = BacktraderBrokerAdapter(
-        bt_strategy=active_bridge,
-        instrument_specs=registry,
-    )
-    with pytest.raises(ValueError, match="is missing from instrument registry"):
-        adapter.get_instrument_specification("UNKNOWN")
+    with pytest.raises(ValueError, match="is missing from central instrument registry"):
+        production_broker.get_instrument_specification("UNKNOWN")
 
 # =============================================================================
 # -----------------------------------------------------------------------------
