@@ -6,7 +6,6 @@ Validates full loop execution from data ingestion to absolute order settlement.
 from datetime import datetime
 from datetime import timedelta
 from typing import Any
-from unittest.mock import MagicMock
 
 import backtrader as bt
 import pandas as pd
@@ -85,7 +84,6 @@ def test_backtrader_cerebro_loop_e2e_execution():
     cerebro.adddata(data_feed)
     cerebro.broker.setcash(10000000.0)
 
-    mock_setup_broker = MagicMock()
     registry = {
         "EURUSD": InstrumentSpecification(
             base_spread_ticks=0.6,
@@ -96,10 +94,13 @@ def test_backtrader_cerebro_loop_e2e_execution():
     }
 
     instrument_registry = InstrumentRegistry(specifications=registry)
-    mock_setup_broker._instrument_specs = registry
+
+    production_broker = BacktraderBrokerAdapter(
+        instrument_registry=instrument_registry,
+    )
 
     bot = IntegrationMeanReversionBot(
-        broker_bridge=mock_setup_broker,
+        broker_bridge=production_broker,
         warm_up_bars=15,
     )
 
@@ -109,8 +110,7 @@ def test_backtrader_cerebro_loop_e2e_execution():
         instrument_registry=instrument_registry,
     )
 
-    strategies = cerebro.run()
-    active_bridge = strategies[0]
+    cerebro.run()
 
     assert bot.is_warmed_up is True
     assert bot.trade_executed is True
@@ -124,12 +124,8 @@ def test_backtrader_cerebro_loop_e2e_execution():
     assert first_execution.side == TransactionSide.LONG
     assert first_execution.executed_size == 100000
 
-    adapter = BacktraderBrokerAdapter(
-        bt_strategy=active_bridge,
-        instrument_registry=instrument_registry,
-    )
     with pytest.raises(ValueError, match="is missing from central instrument registry"):
-        adapter.get_instrument_specification("UNKNOWN")
+        production_broker.get_instrument_specification("UNKNOWN")
 
 # =============================================================================
 # -----------------------------------------------------------------------------

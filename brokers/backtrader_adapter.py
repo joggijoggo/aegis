@@ -20,15 +20,25 @@ class BacktraderBrokerAdapter(AbstractBrokerBridge):
 
 # -----------------------------------------------------------------------------
 
-    def __init__(self, bt_strategy: Any, instrument_registry: InstrumentRegistry):
+    def __init__(self, instrument_registry: InstrumentRegistry, bt_strategy: Any = None):
         """Initializes the adapter anchored to an active Backtrader strategy.
 
         Args:
-            bt_strategy (Any): Active instance of a bt.Strategy object.
             instrument_registry (InstrumentRegistry): Enforced domain registry.
+            bt_strategy (Any, optional): Active instance of a bt.Strategy object.
         """
         self.strategy = bt_strategy
         self._instrument_registry = instrument_registry
+
+# -----------------------------------------------------------------------------
+
+    def set_strategy(self, bt_strategy: Any) -> None:
+        """Binds the active Backtrader execution context to this adapter.
+
+        Args:
+            bt_strategy (Any): Active instance of a bt.Strategy object.
+        """
+        self.strategy = bt_strategy
 
 # -----------------------------------------------------------------------------
 

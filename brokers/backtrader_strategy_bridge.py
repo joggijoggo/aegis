@@ -36,11 +36,25 @@ class BacktraderStrategyBridge(bt.Strategy):
         self.aegis_bot = aegis_bot
         self.instrument_registry = instrument_registry
 
-        # Hot-wire the hexagonal architecture loop by binding production adapter
-        self.aegis_bot.broker = BacktraderBrokerAdapter(
-            bt_strategy=self,
-            instrument_registry=self.instrument_registry,
-        )
+        # DEVIATION NOTE: BACKTRADER BOUNDARY EXCLUSION & LATE RUNTIME BINDING
+        # ---------------------------------------------------------------------
+        # Backtrader uses a rigid execution model where order placement requires
+        # direct access to an active bt.Strategy instance context.
+        #
+        # In an ideal clean architecture, Inbound Ingestion Gates (this bridge)
+        # and Outbound Order Bridges (the Broker Adapter) must be totally isolated.
+        #
+        # To avoid the anti-pattern of the inbound loop aggressively modifying
+        # the bot dependency tree, we implement a explicit late binding routine.
+        # If the bot uses a BacktraderBrokerAdapter instance, we dynamically link
+        # this executing context using its dedicated set_strategy() method.
+        # This isolates the framework-specific hack away from the core domain,
+        # maintaining an acyclic compile-time import tree.
+        #
+        # TODO(DEVELOPMENT): Move this late runtime linkage out into a neutral
+        # SessionRunner orchestrator wrapper to achieve perfect component isolation.
+        if isinstance(self.aegis_bot.broker, BacktraderBrokerAdapter):
+            self.aegis_bot.broker.set_strategy(bt_strategy=self)
 
         target_symbol = self.data._name
         spec = self.instrument_registry.get_specification(target_symbol)

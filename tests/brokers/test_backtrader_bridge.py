@@ -13,6 +13,7 @@ import backtrader as bt
 import pandas as pd
 import pytest
 
+from brokers.backtrader_adapter import BacktraderBrokerAdapter
 from brokers.backtrader_strategy_bridge import BacktraderStrategyBridge
 from core.models import InstrumentSpecification
 from core.models import MarketPricePoint
@@ -92,10 +93,13 @@ def test_backtrader_bridge_captures_order_lifecycle():
     cerebro = bt.Cerebro()
     cerebro.adddata(data_feed)
 
-    mock_initial_broker = MagicMock()
-    mock_initial_broker._instrument_specs = _TEST_SPECS
+    mock_bt_strategy = MagicMock()
+    production_broker = BacktraderBrokerAdapter(
+        bt_strategy=mock_bt_strategy,
+        instrument_registry=TEST_REGISTRY,
+    )
 
-    bot = MockAegisBot(broker_bridge=mock_initial_broker, warm_up_bars=1)
+    bot = MockAegisBot(broker_bridge=production_broker, warm_up_bars=1)
 
     cerebro.addstrategy(
         BacktraderStrategyBridge,
@@ -166,10 +170,13 @@ def test_backtrader_bridge_captures_trade_closure():
     cerebro = bt.Cerebro()
     cerebro.adddata(data_feed)
 
-    mock_initial_broker = MagicMock()
-    mock_initial_broker._instrument_specs = _TEST_SPECS
+    mock_bt_strategy = MagicMock()
+    production_broker = BacktraderBrokerAdapter(
+        bt_strategy=mock_bt_strategy,
+        instrument_registry=TEST_REGISTRY,
+    )
 
-    bot = MockAegisBot(broker_bridge=mock_initial_broker, warm_up_bars=1)
+    bot = MockAegisBot(broker_bridge=production_broker, warm_up_bars=1)
 
     cerebro.addstrategy(
         BacktraderStrategyBridge,
@@ -238,10 +245,13 @@ def test_backtrader_bridge_feeds_warm_up_and_triggers_strategy():
     cerebro = bt.Cerebro()
     cerebro.adddata(data_feed)
 
-    mock_initial_broker = MagicMock()
-    mock_initial_broker._instrument_specs = _TEST_SPECS
+    mock_bt_strategy = MagicMock()
+    production_broker = BacktraderBrokerAdapter(
+        bt_strategy=mock_bt_strategy,
+        instrument_registry=TEST_REGISTRY,
+    )
 
-    bot = MockAegisBot(broker_bridge=mock_initial_broker, warm_up_bars=10)
+    bot = MockAegisBot(broker_bridge=production_broker, warm_up_bars=10)
 
     cerebro.addstrategy(
         BacktraderStrategyBridge,
@@ -278,10 +288,13 @@ def test_backtrader_bridge_propagates_dynamic_friction_metrics():
     cerebro = bt.Cerebro()
     cerebro.adddata(data_feed)
 
-    mock_initial_broker = MagicMock()
-    mock_initial_broker._instrument_specs = _TEST_SPECS
+    mock_bt_strategy = MagicMock()
+    production_broker = BacktraderBrokerAdapter(
+        bt_strategy=mock_bt_strategy,
+        instrument_registry=TEST_REGISTRY,
+    )
 
-    bot = MockAegisBot(broker_bridge=mock_initial_broker, warm_up_bars=1)
+    bot = MockAegisBot(broker_bridge=production_broker, warm_up_bars=1)
     bot.on_bar_close = MagicMock()
 
     cerebro.addstrategy(
@@ -320,16 +333,18 @@ def test_backtrader_bridge_raises_value_error_on_unregistered_asset():
         lines = ('atr',)
         params = (('atr', -1),)
 
-    # Ingest an asset name intentionally omitted from the core broker register
     data_feed = PandasDataWithATR(dataname=df, name="UNKNOWN_ASSET")
 
     cerebro = bt.Cerebro()
     cerebro.adddata(data_feed)
 
-    mock_initial_broker = MagicMock()
-    mock_initial_broker._instrument_specs = _TEST_SPECS
+    mock_bt_strategy = MagicMock()
+    production_broker = BacktraderBrokerAdapter(
+        bt_strategy=mock_bt_strategy,
+        instrument_registry=TEST_REGISTRY,
+    )
 
-    bot = MockAegisBot(broker_bridge=mock_initial_broker, warm_up_bars=1)
+    bot = MockAegisBot(broker_bridge=production_broker, warm_up_bars=1)
 
     with pytest.raises(ValueError, match="is missing from central instrument registry"):
         cerebro.addstrategy(
