@@ -37,7 +37,7 @@ class SimulatedBrokerAdapter(AbstractBrokerBridge):
         order_type: OrderType,
         volume_lots: float,
         stop_loss_price: float,
-        take_profit_price: float
+        take_profit_price: float,
     ) -> dict[str, Any]:
         """Routes transaction parameters records to the virtual isolated ledger.
 
@@ -70,7 +70,7 @@ class SimulatedBrokerAdapter(AbstractBrokerBridge):
         return {
             "balance": self.account.balance,
             "equity": self.account.equity,
-            "positions": [self.account.mock_positions] if self.account.mock_positions else []
+            "positions": [self.account.mock_positions] if self.account.mock_positions else [],
         }
 
 # -----------------------------------------------------------------------------
@@ -84,7 +84,12 @@ class SimulatedBrokerAdapter(AbstractBrokerBridge):
         Returns:
             InstrumentSpecification: Standard baseline specifications snapshot.
         """
-        return InstrumentSpecification(pip_size=0.0001, lot_size=100000)
+        return InstrumentSpecification(
+            base_spread_ticks=0.6,
+            tick_size=0.0001,
+            volatility_factor=0.1,
+            lot_size=100000,
+        )
 
 # =============================================================================
 # -----------------------------------------------------------------------------

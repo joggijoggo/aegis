@@ -1,7 +1,7 @@
-"""Aegis Framework - IG Group Financial Friction Models.
+"""Aegis Framework - Financial Friction Models.
 
 Simulates volatility-adjusted dynamic spreads and localized interbank liquidity
-drain markup penalties tailored to modern FX clearing conditions.
+drain markup penalties tailored to modern clearing conditions.
 """
 
 from datetime import datetime
@@ -14,25 +14,28 @@ from core.models import MarketPricePoint
 # -----------------------------------------------------------------------------
 # =============================================================================
 
-class IGGroupFrictionEngine:
-    """Emulates dynamic spreads and interbank rollover constraints of IG Market."""
+class DynamicFrictionEngine:
+    """Emulates dynamic spreads and interbank rollover constraints."""
 
 # -----------------------------------------------------------------------------
 
     def __init__(
         self,
-        base_spread_pips: float,
-        pip_value: float = 0.0001
+        base_spread_ticks: float,
+        tick_size: float,
+        volatility_factor: float,
     ):
         """Initializes the pricing friction simulator.
 
         Args:
-            base_spread_pips (float): Minimum tight spread value in pips.
-            pip_value (float): Market pip translation scale (e.g., 0.0001).
+            base_spread_ticks (float): Minimum tight spread value in ticks.
+            tick_size (float): Market tick translation scale (e.g., 0.0001).
+            volatility_factor (float): Sensitivity coefficient for
+                ATR-driven spread expansion.
         """
-        self.base_spread_pips = base_spread_pips
-        self.pip_value = pip_value
-        self.london_tz = ZoneInfo('Europe/London')
+        self.base_spread_ticks = base_spread_ticks
+        self.tick_size = tick_size
+        self.volatility_factor = volatility_factor
 
 # -----------------------------------------------------------------------------
 
@@ -40,7 +43,7 @@ class IGGroupFrictionEngine:
         self,
         utc_time: datetime,
         mid_price: float,
-        current_atr: float
+        current_atr: float,
     ) -> MarketPricePoint:
         """Calculates bid/ask parameters factoring in localized time filters.
 
@@ -52,27 +55,45 @@ class IGGroupFrictionEngine:
         Returns:
             MarketPricePoint: Structured snapshot mapping absolute spreads.
         """
-        london_time = utc_time.astimezone(self.london_tz)
-        h = london_time.hour
-        m = london_time.minute
+        paris_zone = ZoneInfo("Europe/Paris")
+        local_time = utc_time.astimezone(paris_zone)
 
-        is_rollover = False
-        if (h == 21 and m >= 45) or (h == 22) or (h == 23 and m <= 15):
-            is_rollover = True
+        is_night = local_time.hour >= 23 or local_time.hour < 8
+        multiplier = 4.0 if is_night else 1.0
+        time_spread = self.base_spread_ticks * multiplier * self.tick_size
+        volatility_markup = current_atr * self.volatility_factor
+        total_spread = time_spread + volatility_markup
 
-        multiplier = 4.0 if is_rollover else 1.0
-
-        vol_markup = current_atr / self.pip_value if current_atr > 0 else 0.0
-        total_spread_pips = (self.base_spread_pips + vol_markup) * multiplier
-        half_spread_value = (total_spread_pips * self.pip_value) / 2.0
+        half_spread = total_spread / 2.0
+        bid_price = mid_price - half_spread
+        ask_price = mid_price + half_spread
 
         return MarketPricePoint(
             timestamp=utc_time,
             mid_price=mid_price,
-            bid=mid_price - half_spread_value,
-            ask=mid_price + half_spread_value,
-            current_atr=current_atr
+            bid=bid_price,
+            ask=ask_price,
+            current_atr=current_atr,
+            is_night_tariff=is_night,
         )
+
+# -----------------------------------------------------------------------------
+
+    def calculate_commission(
+        self,
+        size: float,
+        commission_per_lot: float,
+    ) -> float:
+        """Calculates the absolute institutional execution fee based on volume.
+
+        Args:
+            size (float): Position size expressed in transaction lots.
+            commission_per_lot (float): Contract commission rate per volume unit.
+
+        Returns:
+            float: Total calculated fee currency volume value.
+        """
+        return float(size * commission_per_lot)
 
 # =============================================================================
 # -----------------------------------------------------------------------------

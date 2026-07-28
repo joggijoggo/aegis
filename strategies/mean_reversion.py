@@ -61,8 +61,8 @@ class AegisMeanReversionBot(AbstractStrategy):
                 order_type=OrderType.MARKET,
                 volume_lots=1.0,
                 current_price=price_snapshot.mid_price,
-                stop_loss_pips=20.0,
-                take_profit_pips=40.0
+                stop_loss_ticks=20.0,
+                take_profit_ticks=40.0,
             )
 
 # =============================================================================

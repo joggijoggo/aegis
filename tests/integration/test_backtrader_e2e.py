@@ -47,7 +47,6 @@ class IntegrationMeanReversionBot(AbstractStrategy):
         """Evaluates thresholds to trigger real absolute execution entries."""
         current_close = historical_closes[-1]
 
-        # At bar 20, force an entry signal to verify the infrastructure execution chain
         if len(historical_closes) == 20 and not self.trade_executed:
             self.place_bracket_order(
                 symbol=asset,
@@ -55,63 +54,66 @@ class IntegrationMeanReversionBot(AbstractStrategy):
                 order_type=OrderType.MARKET,
                 volume_lots=1.0,
                 current_price=current_close,
-                stop_loss_pips=20.0,
-                take_profit_pips=40.0,
+                stop_loss_ticks=20.0,
+                take_profit_ticks=40.0,
             )
             self.trade_executed = True
-
 
 # -----------------------------------------------------------------------------
 
 def test_backtrader_cerebro_loop_e2e_execution():
     """Validates that a bot executes an entire backtest cycle through Cerebro."""
-    # 1. Create a 30-bar extended pandas pricing dataframe to trigger signals
     timestamps = [datetime(2026, 3, 25, 12, 0) + timedelta(minutes=i) for i in range(30)]
     data = {
         "open": [1.1000] * 30,
         "high": [1.1050] * 25 + [1.1150] * 5,
         "low": [1.0950] * 30,
-        # Create an artificial dip and a recovery to trigger and close the trade
         "close": [1.1000] * 19 + [1.1000] + [1.1000] * 5 + [1.1100] * 5,
         "volume": [1000] * 30,
+        "atr": [0.0010] * 30,
     }
     df = pd.DataFrame(data, index=timestamps)
-    data_feed = bt.feeds.PandasData(dataname=df)
 
-    # 2. Setup Cerebro infrastructure nodes
+    class PandasDataWithATR(bt.feeds.PandasData):
+        lines = ('atr',)
+        params = (('atr', -1),)
+
+    data_feed = PandasDataWithATR(dataname=df, name="EURUSD")
+
     cerebro = bt.Cerebro()
     cerebro.adddata(data_feed)
     cerebro.broker.setcash(10000000.0)
 
-    # 3. Instantiate bot carrying a structural mockup profile carrying specs registry
     mock_setup_broker = MagicMock()
-    registry = {"EURUSD": InstrumentSpecification(pip_size=0.0001, lot_size=100000)}
+    registry = {
+        "EURUSD": InstrumentSpecification(
+            base_spread_ticks=0.6,
+            tick_size=0.0001,
+            volatility_factor=0.1,
+            lot_size=100000,
+        ),
+    }
     mock_setup_broker._instrument_specs = registry
 
     bot = IntegrationMeanReversionBot(broker_bridge=mock_setup_broker, warm_up_bars=15)
 
-    # 4. Inject the bridge strategy linking Cerebro to our target bot
     cerebro.addstrategy(BacktraderStrategyBridge, aegis_bot=bot)
 
     strategies = cerebro.run()
     active_bridge = strategies[0]
 
-    # 5. Assert technical lifecycle parameters compliance
     assert bot.is_warmed_up is True
     assert bot.trade_executed is True
 
-    # 6. Verify transactional audit trail matching Backtrader execution
     assert len(bot.order_events) > 0
     completed_orders = [e for e in bot.order_events if e.status == OrderStatus.COMPLETED]
     assert len(completed_orders) >= 1
 
-    # Verify that accounting structures captured the mathematical specifications
     first_execution = completed_orders[0]
     assert first_execution.symbol == "EURUSD"
     assert first_execution.side == TransactionSide.LONG
     assert first_execution.executed_size == 100000
 
-    # 7. Saturate coverage for instrument specifications missing token error (Line 111)
     adapter = BacktraderBrokerAdapter(
         bt_strategy=active_bridge,
         instrument_specs=registry,

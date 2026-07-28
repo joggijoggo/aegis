@@ -67,10 +67,10 @@ class AbstractStrategy(ABC):
         order_type: OrderType,
         volume_lots: float,
         current_price: float,
-        stop_loss_pips: float,
-        take_profit_pips: float
+        stop_loss_ticks: float,
+        take_profit_ticks: float,
     ) -> dict[str, Any]:
-        """Translates relative pips boundaries into absolute prices before routing.
+        """Translates relative ticks boundaries into absolute prices before routing.
 
         Args:
             symbol (str): Target asset tracking identifier.
@@ -78,8 +78,8 @@ class AbstractStrategy(ABC):
             order_type (OrderType): Enforced execution constraint type enum.
             volume_lots (float): Lot size exposure allocation.
             current_price (float): Active market baseline execution price.
-            stop_loss_pips (float): Protective stop distance in pips.
-            take_profit_pips (float): Target limit distance in pips.
+            stop_loss_ticks (float): Protective stop distance in ticks.
+            take_profit_ticks (float): Target limit distance in ticks.
 
         Returns:
             dict[str, Any]: Standardized execution receipt parameters.
@@ -87,11 +87,11 @@ class AbstractStrategy(ABC):
         spec = self.broker.get_instrument_specification(symbol)
 
         if side == TransactionSide.LONG:
-            stop_price = current_price - (stop_loss_pips * spec.pip_size)
-            limit_price = current_price + (take_profit_pips * spec.pip_size)
+            stop_price = current_price - (stop_loss_ticks * spec.tick_size)
+            limit_price = current_price + (take_profit_ticks * spec.tick_size)
         else:
-            stop_price = current_price + (stop_loss_pips * spec.pip_size)
-            limit_price = current_price - (take_profit_pips * spec.pip_size)
+            stop_price = current_price + (stop_loss_ticks * spec.tick_size)
+            limit_price = current_price - (take_profit_ticks * spec.tick_size)
 
         return self.broker.place_order(
             symbol=symbol,
@@ -99,7 +99,7 @@ class AbstractStrategy(ABC):
             order_type=order_type,
             volume_lots=volume_lots,
             stop_loss_price=stop_price,
-            take_profit_price=limit_price
+            take_profit_price=limit_price,
         )
 
 # -----------------------------------------------------------------------------

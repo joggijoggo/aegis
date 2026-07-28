@@ -4,10 +4,12 @@ Connects Backtrader lifecycle event loops directly to Aegis strategy brains.
 """
 
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import backtrader as bt
 
 from brokers.backtrader_adapter import BacktraderBrokerAdapter
+from core.frictions import DynamicFrictionEngine
 from core.models import MarketPricePoint
 from core.models import OrderEvent
 from core.models import OrderStatus
@@ -32,7 +34,7 @@ class BacktraderStrategyBridge(bt.Strategy):
         self.aegis_bot = aegis_bot
 
         # Extract instrument specs stored into the initial broker to preserve context
-        specs_ref = getattr(self.aegis_bot.broker, "_instrument_specs", {})
+        specs_ref = getattr(self.aegis_bot.broker, "_instrument_specs")
 
         # Hot-wire the hexagonal architecture loop by binding production adapter
         self.aegis_bot.broker = BacktraderBrokerAdapter(
@@ -40,18 +42,37 @@ class BacktraderStrategyBridge(bt.Strategy):
             instrument_specs=specs_ref,
         )
 
+        target_symbol = self.data._name
+
+        if target_symbol not in specs_ref:
+            raise ValueError(
+                f"Critical error: '{target_symbol}' specifications missing from registry."
+            )
+
+        spec = specs_ref[target_symbol]
+
+        self.friction_engine = DynamicFrictionEngine(
+            base_spread_ticks=spec.base_spread_ticks,
+            tick_size=spec.tick_size,
+            volatility_factor=spec.volatility_factor,
+        )
+
 # -----------------------------------------------------------------------------
 
     def next(self) -> None:
         """Evaluates ongoing terminal intervals ticks released by Cerebro loops."""
         # 1. Capture exact timeline timestamp parameters from Backtrader line tracking
-        current_dt = self.data.datetime.datetime(0)
+        current_dt = self.data.datetime.datetime(0).replace(tzinfo=ZoneInfo("UTC"))
         mid_price = self.data.close[0]
+        asset_symbol = self.data._name
+        current_atr = self.data.atr[0]
 
         # 2. Simulate standard asset pricing matrix offsets parameters
-        # Note: Will leverage dynamic IGFrictionEngine linkage during Jalon 5 expansion
-        bid_price = mid_price - 0.0001
-        ask_price = mid_price + 0.0001
+        market_prices = self.friction_engine.get_market_prices(
+            utc_time=current_dt,
+            mid_price=mid_price,
+            current_atr=current_atr,
+        )
 
         # 3. Dynamic sliding window extraction layer routing for warm-up buffers
         current_buffer_size = len(self)
@@ -61,14 +82,15 @@ class BacktraderStrategyBridge(bt.Strategy):
         price_snapshot = MarketPricePoint(
             timestamp=current_dt,
             mid_price=mid_price,
-            bid=bid_price,
-            ask=ask_price,
-            current_atr=0.0010,
+            bid=market_prices.bid,
+            ask=market_prices.ask,
+            current_atr=current_atr,
+            is_night_tariff=market_prices.is_night_tariff,
         )
 
         # 5. Route structured parameters packets to the Aegis decision loop
         self.aegis_bot.on_bar_close(
-            asset="EURUSD",
+            asset=asset_symbol,
             price_snapshot=price_snapshot,
             historical_closes=historical_closes,
         )
@@ -90,10 +112,11 @@ class BacktraderStrategyBridge(bt.Strategy):
 
         side_enum = TransactionSide.LONG if order.isbuy() else TransactionSide.SHORT
         event_dt = self.data.datetime.datetime(0)
+        order_symbol = order.data._name
 
         event = OrderEvent(
             order_id=order.ref,
-            symbol="EURUSD",
+            symbol=order_symbol,
             status=status_enum,
             side=side_enum,
             executed_price=float(order.executed.price) if order.status == bt.Order.Completed else 0.0,
@@ -127,10 +150,11 @@ class BacktraderStrategyBridge(bt.Strategy):
         # 4. Safely convert Backtrader float timestamps to Python datetime objects
         t_entry = bt.num2date(trade.dtopen)
         t_exit = bt.num2date(trade.dtclose)
+        trade_symbol = trade.data._name
 
         # 5. Construct the unified immutable position closure audit snapshot
         event = PositionCloseEvent(
-            symbol="EURUSD",
+            symbol=trade_symbol,
             side=side_enum,
             pnl_gross=pnl_gross,
             pnl_net=pnl_net,
