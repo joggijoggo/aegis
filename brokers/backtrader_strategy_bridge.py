@@ -39,7 +39,7 @@ class BacktraderStrategyBridge(bt.Strategy):
         # Hot-wire the hexagonal architecture loop by binding production adapter
         self.aegis_bot.broker = BacktraderBrokerAdapter(
             bt_strategy=self,
-            instrument_specs=self.instrument_registry,
+            instrument_registry=self.instrument_registry,
         )
 
         target_symbol = self.data._name

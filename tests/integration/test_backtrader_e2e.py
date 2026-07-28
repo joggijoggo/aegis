@@ -126,9 +126,9 @@ def test_backtrader_cerebro_loop_e2e_execution():
 
     adapter = BacktraderBrokerAdapter(
         bt_strategy=active_bridge,
-        instrument_specs=registry,
+        instrument_registry=instrument_registry,
     )
-    with pytest.raises(ValueError, match="is missing from instrument registry"):
+    with pytest.raises(ValueError, match="is missing from central instrument registry"):
         adapter.get_instrument_specification("UNKNOWN")
 
 # =============================================================================
