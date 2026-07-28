@@ -54,6 +54,20 @@ class OrderEvent:
 # -----------------------------------------------------------------------------
 
 @dataclass(frozen=True)
+class PositionCloseEvent:
+    """Encapsulates definitive accounting metrics records when a trade is finalized."""
+    symbol: str
+    side: TransactionSide
+    pnl_gross: float
+    pnl_net: float
+    commission: float
+    bars_duration: int
+    entry_timestamp: datetime
+    exit_timestamp: datetime
+
+# -----------------------------------------------------------------------------
+
+@dataclass(frozen=True)
 class MarketPricePoint:
     """Protects pricing snapshots matrix calculations from mutations."""
     timestamp: datetime

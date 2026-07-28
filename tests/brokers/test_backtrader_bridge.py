@@ -154,6 +154,68 @@ def test_backtrader_bridge_captures_order_lifecycle():
     active_bridge.notify_order(mock_order_transient)
     assert len(bot.order_events) == 2
 
+# -----------------------------------------------------------------------------
+
+def test_backtrader_bridge_captures_trade_closure():
+    """Validates that the bridge intercepts closed positions performance metrics."""
+    timestamps = [datetime(2026, 3, 25, 12, 0) + timedelta(minutes=i) for i in range(2)]
+    data = {
+        "open": [1.1000] * 2,
+        "high": [1.1010] * 2,
+        "low": [1.0990] * 2,
+        "close": [1.1000] * 2,
+        "volume": [1000] * 2,
+    }
+    df = pd.DataFrame(data, index=timestamps)
+    data_feed = bt.feeds.PandasData(dataname=df)
+
+    cerebro = bt.Cerebro()
+    cerebro.adddata(data_feed)
+
+    mock_initial_broker = MagicMock()
+    registry = {"EURUSD": InstrumentSpecification(pip_size=0.0001, lot_size=100000)}
+    mock_initial_broker._instrument_specs = registry
+
+    bot = MockAegisBot(broker_bridge=mock_initial_broker, warm_up_bars=1)
+
+    cerebro.addstrategy(BacktraderStrategyBridge, aegis_bot=bot)
+    strategies = cerebro.run()
+    active_bridge = strategies[0]
+
+    # 1. Simulate a closed trade event matching core specifications parameters
+    mock_trade = MagicMock()
+    mock_trade.isclosed = True
+    mock_trade.pnlnotcomm = 150.0
+    mock_trade.pnl = 145.0
+    mock_trade.commission = 5.0
+    mock_trade.barlen = 4
+
+    t_entry = datetime(2026, 3, 25, 12, 0)
+    t_exit = datetime(2026, 3, 25, 12, 4)
+    mock_trade.dtopen = bt.date2num(t_entry)
+    mock_trade.dtclose = bt.date2num(t_exit)
+
+    active_bridge.notify_trade(mock_trade)
+
+    # Assertions checking that the custom structure is properly populated
+    assert len(bot.position_close_events) == 1
+    close_event = bot.position_close_events[0]
+    assert close_event.symbol == "EURUSD"
+    assert close_event.side == TransactionSide.LONG
+    assert close_event.pnl_gross == 150.0
+    assert close_event.pnl_net == 145.0
+    assert close_event.commission == 5.0
+    assert close_event.bars_duration == 4
+    assert close_event.entry_timestamp == t_entry
+    assert close_event.exit_timestamp == t_exit
+
+    # 2. Simulate a transient open trade event which must be ignored
+    mock_trade_open = MagicMock()
+    mock_trade_open.isclosed = False
+
+    active_bridge.notify_trade(mock_trade_open)
+    assert len(bot.position_close_events) == 1
+
 # =============================================================================
 # -----------------------------------------------------------------------------
 # =============================================================================

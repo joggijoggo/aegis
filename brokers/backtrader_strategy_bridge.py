@@ -11,6 +11,7 @@ from brokers.backtrader_adapter import BacktraderBrokerAdapter
 from core.models import MarketPricePoint
 from core.models import OrderEvent
 from core.models import OrderStatus
+from core.models import PositionCloseEvent
 from core.models import TransactionSide
 
 # =============================================================================
@@ -101,6 +102,45 @@ class BacktraderStrategyBridge(bt.Strategy):
         )
 
         self.aegis_bot.order_events.append(event)
+
+# -----------------------------------------------------------------------------
+
+    def notify_trade(self, trade: bt.Trade) -> None:
+        """Intercepts finalized trades to extract closed position performance logs.
+
+        Args:
+            trade (bt.Trade): Native Backtrader closed position tracking record.
+        """
+        # 1. Filter out transient open or partial execution intervals states
+        if not trade.isclosed:
+            return
+
+        # 2. Map Backtrader internal metrics parameters to core domain enums
+        side_enum = TransactionSide.LONG if trade.pnlnotcomm >= 0.0 else TransactionSide.LONG
+
+        # 3. Extract native temporal and structural ledger properties
+        pnl_gross = float(trade.pnlnotcomm)
+        pnl_net = float(trade.pnl)
+        commission = float(trade.commission)
+        bars_duration = int(trade.barlen)
+
+        # 4. Safely convert Backtrader float timestamps to Python datetime objects
+        t_entry = bt.num2date(trade.dtopen)
+        t_exit = bt.num2date(trade.dtclose)
+
+        # 5. Construct the unified immutable position closure audit snapshot
+        event = PositionCloseEvent(
+            symbol="EURUSD",
+            side=side_enum,
+            pnl_gross=pnl_gross,
+            pnl_net=pnl_net,
+            commission=commission,
+            bars_duration=bars_duration,
+            entry_timestamp=t_entry,
+            exit_timestamp=t_exit,
+        )
+
+        self.aegis_bot.position_close_events.append(event)
 
 # =============================================================================
 # -----------------------------------------------------------------------------
