@@ -18,6 +18,7 @@ from core.models import InstrumentSpecification
 from core.models import OrderStatus
 from core.models import OrderType
 from core.models import TransactionSide
+from core.registry import InstrumentRegistry
 from core.models import MarketPricePoint
 from strategies.base_strategy import AbstractStrategy
 
@@ -93,11 +94,20 @@ def test_backtrader_cerebro_loop_e2e_execution():
             lot_size=100000,
         ),
     }
+
+    instrument_registry = InstrumentRegistry(specifications=registry)
     mock_setup_broker._instrument_specs = registry
 
-    bot = IntegrationMeanReversionBot(broker_bridge=mock_setup_broker, warm_up_bars=15)
+    bot = IntegrationMeanReversionBot(
+        broker_bridge=mock_setup_broker,
+        warm_up_bars=15,
+    )
 
-    cerebro.addstrategy(BacktraderStrategyBridge, aegis_bot=bot)
+    cerebro.addstrategy(
+        BacktraderStrategyBridge,
+        aegis_bot=bot,
+        instrument_registry=instrument_registry,
+    )
 
     strategies = cerebro.run()
     active_bridge = strategies[0]
