@@ -116,11 +116,11 @@ class BacktraderStrategyBridge(bt.Strategy):
             return
 
         # 2. Map Backtrader internal metrics parameters to core domain enums
-        side_enum = TransactionSide.LONG if trade.pnlnotcomm >= 0.0 else TransactionSide.LONG
+        side_enum = TransactionSide.LONG if trade.long else TransactionSide.SHORT
 
         # 3. Extract native temporal and structural ledger properties
-        pnl_gross = float(trade.pnlnotcomm)
-        pnl_net = float(trade.pnl)
+        pnl_gross = float(trade.pnl)
+        pnl_net = float(trade.pnlcomm)
         commission = float(trade.commission)
         bars_duration = int(trade.barlen)
 

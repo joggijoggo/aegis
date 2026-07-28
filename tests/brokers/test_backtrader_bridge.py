@@ -185,8 +185,9 @@ def test_backtrader_bridge_captures_trade_closure():
     # 1. Simulate a closed trade event matching core specifications parameters
     mock_trade = MagicMock()
     mock_trade.isclosed = True
-    mock_trade.pnlnotcomm = 150.0
-    mock_trade.pnl = 145.0
+    mock_trade.long = True
+    mock_trade.pnl = 150.0
+    mock_trade.pnlcomm = 145.0
     mock_trade.commission = 5.0
     mock_trade.barlen = 4
 

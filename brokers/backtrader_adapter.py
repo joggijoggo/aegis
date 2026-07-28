@@ -53,7 +53,7 @@ class BacktraderBrokerAdapter(AbstractBrokerBridge):
         Returns:
             dict[str, Any]: Standardized execution receipt parameters.
         """
-        entry_price = float(self.strategy.data.close)
+        entry_price = self.strategy.data.close
         spec = self.get_instrument_specification(symbol)
         size_units = int(volume_lots * spec.lot_size)
 
