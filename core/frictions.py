@@ -21,20 +21,20 @@ class IGGroupFrictionEngine:
 
     def __init__(
         self,
-        base_spread_pips: float,
-        pip_value: float = 0.0001,
+        base_spread_ticks: float,
+        tick_size: float = 0.0001,
         volatility_factor: float = 0.1,
     ):
         """Initializes the pricing friction simulator.
 
         Args:
-            base_spread_pips (float): Minimum tight spread value in pips.
-            pip_value (float): Market pip translation scale (e.g., 0.0001).
+            base_spread_ticks (float): Minimum tight spread value in ticks.
+            tick_size (float): Market tick translation scale (e.g., 0.0001).
             volatility_factor (float): Sensitivity coefficient for
                 ATR-driven spread expansion.
         """
-        self.base_spread_pips = base_spread_pips
-        self.pip_value = pip_value
+        self.base_spread_ticks = base_spread_ticks
+        self.tick_size = tick_size
         self.volatility_factor = volatility_factor
         self.london_tz = ZoneInfo('Europe/London')
 
@@ -61,7 +61,7 @@ class IGGroupFrictionEngine:
 
         is_night = local_time.hour >= 23 or local_time.hour < 8
         multiplier = 4.0 if is_night else 1.0
-        time_spread = self.base_spread_pips * multiplier * self.pip_value
+        time_spread = self.base_spread_ticks * multiplier * self.tick_size
         volatility_markup = current_atr * self.volatility_factor
         total_spread = time_spread + volatility_markup
 
