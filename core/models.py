@@ -20,15 +20,15 @@ class OrderSide(Enum):
 
 class OrderStatus(Enum):
     """Enforces compile-time type safety for asynchronous lifecycle states."""
-
-    COMPLETED = "COMPLETED"
+    CANCELED = "CANCELED"
+    FILLED = "FILLED"
+    PARTIALLY_FILLED = "PARTIALLY_FILLED"
     REJECTED = "REJECTED"
 
 # -----------------------------------------------------------------------------
 
 class OrderType(Enum):
     """Enforces structural routing parameter limitations for orders executions."""
-
     MARKET = "MARKET"
     LIMIT = "LIMIT"
 
@@ -36,7 +36,6 @@ class OrderType(Enum):
 
 class TransactionSide(Enum):
     """Enforces execution direction flags across internal accounting nodes."""
-
     LONG = "LONG"
     SHORT = "SHORT"
 
@@ -94,7 +93,7 @@ class OrderEvent:
     """Captures absolute transactional metadata generated during order updates.
 
     Attributes:
-        order_id: The unique system identifier assigned to this request.
+        broker_reference: The unique tracking identifier returned by the broker.
         symbol: The targeted financial instrument ticker.
         status: The exact state inside the execution lifecycle.
         side: The directional positioning constraint of the order.
@@ -102,12 +101,12 @@ class OrderEvent:
         executed_size: The absolute amount of lots fulfilled by the execution.
         timestamp: The definitive execution time of the transaction.
     """
-    order_id: int
+    broker_reference: str
     symbol: str
-    status: "OrderStatus"
-    side: "TransactionSide"
+    status: OrderStatus
+    side: OrderSide
     executed_price: float
-    executed_size: int
+    executed_size: float
     timestamp: datetime
 
 # -----------------------------------------------------------------------------

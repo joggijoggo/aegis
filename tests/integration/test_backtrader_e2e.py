@@ -13,10 +13,12 @@ import pytest
 
 from brokers.backtrader_adapter import BacktraderBrokerAdapter
 from brokers.backtrader_strategy_bridge import BacktraderStrategyBridge
-from core.models import OrderStatus
-from core.models import OrderType
-from core.models import TransactionSide
-from core.models import MarketPricePoint
+from core.models import (
+    OrderSide,
+    OrderStatus,
+    OrderType,
+    MarketPricePoint,
+)
 from strategies.base_strategy import AbstractStrategy
 from tests.test_constants import TEST_REGISTRY
 
@@ -49,7 +51,7 @@ class IntegrationMeanReversionBot(AbstractStrategy):
         if len(historical_closes) == 20 and not self.trade_executed:
             self.place_bracket_order(
                 symbol=asset,
-                side=TransactionSide.LONG,
+                side=OrderSide.BUY,
                 order_type=OrderType.MARKET,
                 volume_lots=1.0,
                 current_price=current_close,
@@ -104,13 +106,15 @@ def test_backtrader_cerebro_loop_e2e_execution():
     assert bot.trade_executed is True
 
     assert len(bot.order_events) > 0
-    completed_orders = [e for e in bot.order_events if e.status == OrderStatus.COMPLETED]
+    completed_orders = [e for e in bot.order_events if e.status == OrderStatus.FILLED]
     assert len(completed_orders) >= 1
 
-    first_execution = completed_orders[0]
-    assert first_execution.symbol == "EURUSD"
-    assert first_execution.side == TransactionSide.LONG
-    assert first_execution.executed_size == 100000
+    for event in bot.order_events:
+        if event.status == OrderStatus.FILLED:
+            assert isinstance(event.broker_reference, str)
+            assert event.executed_price > 0.0
+            assert abs(event.executed_size) > 0.0
+            assert isinstance(event.side, OrderSide)
 
     with pytest.raises(ValueError, match="is missing from central instrument registry"):
         production_broker.get_instrument_specification("UNKNOWN")

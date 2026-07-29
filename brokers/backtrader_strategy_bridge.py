@@ -10,11 +10,14 @@ import backtrader as bt
 
 from brokers.backtrader_adapter import BacktraderBrokerAdapter
 from core.frictions import DynamicFrictionEngine
-from core.models import MarketPricePoint
-from core.models import OrderEvent
-from core.models import OrderStatus
-from core.models import PositionCloseEvent
-from core.models import TransactionSide
+from core.models import (
+    MarketPricePoint,
+    OrderEvent,
+    OrderSide,
+    OrderStatus,
+    PositionCloseEvent,
+    TransactionSide,
+)
 from core.registry import InstrumentRegistry
 
 # =============================================================================
@@ -35,6 +38,7 @@ class BacktraderStrategyBridge(bt.Strategy):
         """
         self.aegis_bot = aegis_bot
         self.instrument_registry = instrument_registry
+        self._notified_volumes: dict[str, float] = {}
 
         # DEVIATION NOTE: BACKTRADER BOUNDARY EXCLUSION & LATE RUNTIME BINDING
         # ---------------------------------------------------------------------
@@ -112,23 +116,42 @@ class BacktraderStrategyBridge(bt.Strategy):
             order (bt.Order): Native Backtrader order instance tracking payload.
         """
         if order.status == bt.Order.Completed:
-            status_enum = OrderStatus.COMPLETED
-        elif order.status in (bt.Order.Rejected, bt.Order.Margin, bt.Order.Canceled):
+            status_enum = OrderStatus.FILLED
+        elif order.status == bt.Order.Partial:
+            status_enum = OrderStatus.PARTIALLY_FILLED
+        elif order.status == bt.Order.Canceled:
+            status_enum = OrderStatus.CANCELED
+        elif order.status in (bt.Order.Rejected, bt.Order.Margin):
             status_enum = OrderStatus.REJECTED
         else:
             return
 
-        side_enum = TransactionSide.LONG if order.isbuy() else TransactionSide.SHORT
         event_dt = self.data.datetime.datetime(0)
         order_symbol = order.data._name
+        side_enum = OrderSide.BUY if order.isbuy() else OrderSide.SELL
+        order_key = str(order.ref)
+
+        has_execution = order.status in (bt.Order.Completed, bt.Order.Partial)
+        executed_price = float(order.executed.price) if has_execution else 0.0
+
+        if has_execution:
+            current_cumulative = float(order.executed.size)
+            previously_notified = self._notified_volumes.get(order_key, 0.0)
+            executed_size = current_cumulative - previously_notified
+            self._notified_volumes[order_key] = current_cumulative
+        else:
+            executed_size = 0.0
+
+        if order.status in (bt.Order.Completed, bt.Order.Canceled, bt.Order.Rejected):
+            self._notified_volumes.pop(order_key, None)
 
         event = OrderEvent(
-            order_id=order.ref,
-            symbol=order_symbol,
-            status=status_enum,
+            broker_reference=order_key,
+            executed_price=executed_price,
+            executed_size=executed_size,
             side=side_enum,
-            executed_price=float(order.executed.price) if order.status == bt.Order.Completed else 0.0,
-            executed_size=int(order.executed.size),
+            status=status_enum,
+            symbol=order_symbol,
             timestamp=event_dt,
         )
 
