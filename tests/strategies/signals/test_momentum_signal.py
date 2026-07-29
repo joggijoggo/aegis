@@ -1,57 +1,57 @@
-"""Aegis Framework - Momentum Signal Pure Mathematics Unit Tests.
+"""Aegis Framework - Momentum Alpha Signal Unit Tests.
 
-Validates stateless signal generation models using primitive vector spaces.
+Validates trend tracking crossover direction logic accuracy and protection limits.
 """
 
+import pytest
+
+from core.exceptions import InsufficientHistoryError
 from strategies.signals.momentum_signal import MomentumSignal
 
 # =============================================================================
 # -----------------------------------------------------------------------------
 # =============================================================================
 
-def test_momentum_signal_evaluates_pure_bearish_crossover() -> None:
-    """Ensures indicator outputs full negative conviction on bearish crossovers."""
-    historical_closes = [10.0, 10.0, 10.0, 10.0, 5.0]
+def test_momentum_signal_detects_bearish_crossover() -> None:
+    """Ensures downward dual moving average crossings generate bearish states."""
+    signal = MomentumSignal(fast_period=2, slow_period=4)
+    prices = [10.0, 11.0, 12.0, 13.0, 9.5]
 
-    indicator = MomentumSignal(fast_period=2, slow_period=4)
-    conviction_alpha = indicator.calculate_alpha(prices=historical_closes)
+    result = signal.calculate_alpha(prices=prices)
 
-    assert isinstance(conviction_alpha, float)
-    assert conviction_alpha == -1.0
-
-# -----------------------------------------------------------------------------
-
-def test_momentum_signal_evaluates_pure_bullish_crossover() -> None:
-    """Ensures indicator outputs full positive conviction on bullish crossovers."""
-    historical_closes = [10.0, 10.0, 10.0, 10.0, 15.0]
-
-    indicator = MomentumSignal(fast_period=2, slow_period=4)
-    conviction_alpha = indicator.calculate_alpha(prices=historical_closes)
-
-    assert isinstance(conviction_alpha, float)
-    assert conviction_alpha == 1.0
+    assert result == -1.0
 
 # -----------------------------------------------------------------------------
 
-def test_momentum_signal_returns_neutral_on_insufficient_history() -> None:
-    """Ensures strategy handles warm-up gaps returning neutral conviction."""
-    historical_closes = [10.0, 10.0]
+def test_momentum_signal_detects_bullish_crossover() -> None:
+    """Ensures upward dual moving average crossings generate bullish states."""
+    signal = MomentumSignal(fast_period=2, slow_period=4)
+    prices = [10.0, 9.0, 8.0, 7.0, 11.0]
 
-    indicator = MomentumSignal(fast_period=2, slow_period=4)
-    conviction_alpha = indicator.calculate_alpha(prices=historical_closes)
+    result = signal.calculate_alpha(prices=prices)
 
-    assert conviction_alpha == 0.0
+    assert result == 1.0
 
 # -----------------------------------------------------------------------------
 
-def test_momentum_signal_returns_neutral_on_parallel_trajectories() -> None:
-    """Ensures strategy returns neutral score when no crossover event is detected."""
-    historical_closes = [10.0, 10.0, 10.0, 10.0, 10.0]
+def test_momentum_signal_raises_insufficient_history_error() -> None:
+    """Ensures series length shortfalls trigger immediate specific exceptions."""
+    signal = MomentumSignal(fast_period=2, slow_period=4)
+    prices = [10.0, 11.0]
 
-    indicator = MomentumSignal(fast_period=2, slow_period=4)
-    conviction_alpha = indicator.calculate_alpha(prices=historical_closes)
+    with pytest.raises(InsufficientHistoryError):
+        signal.calculate_alpha(prices=prices)
 
-    assert conviction_alpha == 0.0
+# -----------------------------------------------------------------------------
+
+def test_momentum_signal_returns_neutral_when_trend_persists() -> None:
+    """Ensures continuous market direction returns clear static flat states."""
+    signal = MomentumSignal(fast_period=2, slow_period=4)
+    prices = [10.0, 11.0, 12.0, 13.0, 14.0]
+
+    result = signal.calculate_alpha(prices=prices)
+
+    assert result == 0.0
 
 # =============================================================================
 # -----------------------------------------------------------------------------

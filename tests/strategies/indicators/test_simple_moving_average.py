@@ -1,36 +1,35 @@
 """Aegis Framework - Simple Moving Average Indicator Unit Tests.
 
-Validates stateless mathematical data transformers using primitive series.
+Validates rolling arithmetic mean calculation accuracy and boundary safety limits.
 """
 
 import pytest
 
+from core.exceptions import InsufficientHistoryError
 from strategies.indicators.simple_moving_average import SimpleMovingAverage
 
 # =============================================================================
 # -----------------------------------------------------------------------------
 # =============================================================================
 
-def test_simple_moving_average_computes_exact_rolling_average() -> None:
-    """Ensures moving average outputs precise mathematical expectations."""
-    prices = [1.0800, 1.0810, 1.0820, 1.0830]
-
+def test_simple_moving_average_calculates_correct_arithmetic_mean() -> None:
+    """Ensures calculated output matches exact mathematical expectations."""
     indicator = SimpleMovingAverage(period=3)
-    sma_value = indicator.calculate(values=prices)
+    values = [10.0, 20.0, 30.0, 40.0]
 
-    assert isinstance(sma_value, float)
-    assert round(sma_value, 4) == 1.0820
+    result = indicator.calculate(values=values)
+
+    assert result == 30.0
 
 # -----------------------------------------------------------------------------
 
-def test_simple_moving_average_raises_value_error_on_short_series() -> None:
-    """Ensures calculation fails safely with explicit exception on raw short series."""
-    prices = [1.0800, 1.0810]
-
+def test_simple_moving_average_raises_insufficient_history_error() -> None:
+    """Ensures series length shortfalls trigger immediate specific exceptions."""
     indicator = SimpleMovingAverage(period=3)
+    values = [10.0, 20.0]
 
-    with pytest.raises(ValueError, match="Historical values length is shorter"):
-        indicator.calculate(values=prices)
+    with pytest.raises(InsufficientHistoryError):
+        indicator.calculate(values=values)
 
 # =============================================================================
 # -----------------------------------------------------------------------------

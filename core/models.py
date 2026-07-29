@@ -44,6 +44,24 @@ class TransactionSide(Enum):
 # =============================================================================
 
 @dataclass(frozen=True)
+class ExposureIntent:
+    """Immutable data record capturing passive execution desires.
+
+    Attributes:
+        alpha_direction: The continuous trend conviction scalar bounded strictly
+            between -1.0 and 1.0. A value of 0.0 explicitly enforces a flat position
+            and triggers a portfolio liquidation. A value of None indicates no active
+            opinion, instructing the engine to maintain ongoing exposures.
+        stop_loss_ticks: The protective exit distance measured in ticks.
+        take_profit_ticks: The target take-profit distance measured in ticks.
+    """
+    alpha_direction: float | None = None
+    stop_loss_ticks: float = 0.0
+    take_profit_ticks: float = 0.0
+
+# -----------------------------------------------------------------------------
+
+@dataclass(frozen=True)
 class InstrumentSpecification:
     """Enforces compile-time type validation for multi-asset market parameters.
 
@@ -85,6 +103,19 @@ class MarketPricePoint:
     ask: float
     current_atr: float
     is_night_tariff: bool = False
+
+# -----------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class MarketContext:
+    """Immutable record capturing the current market state.
+
+    Attributes:
+        prices: Current market price information.
+        volume: (Optional) Current market trading volume.
+    """
+    prices: MarketPricePoint
+    volume: float | None = None
 
 # -----------------------------------------------------------------------------
 

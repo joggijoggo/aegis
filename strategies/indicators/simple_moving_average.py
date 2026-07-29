@@ -1,8 +1,9 @@
-"""Aegis Framework - Simple Moving Average Technical Indicator.
+"""Aegis Framework - Simple Moving Average Indicator.
 
-Calculates the arithmetic rolling average over an isolated mathematical vector space.
+Provides the mathematical calculation for rolling simple moving averages.
 """
 
+from core.exceptions import InsufficientHistoryError
 from strategies.indicators.base_indicator import AbstractIndicator
 
 # =============================================================================
@@ -10,37 +11,33 @@ from strategies.indicators.base_indicator import AbstractIndicator
 # =============================================================================
 
 class SimpleMovingAverage(AbstractIndicator):
-    """Passively computes the simple moving average from an raw data values."""
+    """Calculates the arithmetic mean of a rolling price window length."""
 
 # -----------------------------------------------------------------------------
 
-    def __init__(self, period: int = 14):
-        """Initializes the indicator configuration anchoring the window size.
+    def __init__(self, period: int):
+        """Initializes the indicator configuration window.
 
         Args:
-            period: The discrete number of historical intervals required for the
-                rolling calculation window.
+            period: The number of historical values required for the calculation.
         """
         self.period = period
 
 # -----------------------------------------------------------------------------
 
     def calculate(self, values: list[float]) -> float:
-        """Computes the arithmetic average over the last available window space.
+        """Calculates the simple moving average value from the input series.
 
         Args:
-            values: A sequential list of numerical data points.
+            values: List of historical values to evaluate.
 
         Returns:
-            The unique transformed scalar value.
-
-        Raises:
-            ValueError: If the available data values length is shorter than the
-                configured period window.
+            The calculated arithmetic mean value.
         """
         if len(values) < self.period:
-            raise ValueError(
-                "Historical values length is shorter than the indicator period."
+            raise InsufficientHistoryError(
+                f"Insufficient data length {len(values)} "
+                f"for indicator period {self.period}."
             )
 
         return sum(values[-self.period:]) / self.period
