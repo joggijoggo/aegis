@@ -3,6 +3,7 @@
 Evaluates dual moving average crossovers to output a normalized direction conviction.
 """
 
+from core.exceptions import InsufficientHistoryError
 from strategies.indicators.simple_moving_average import SimpleMovingAverage
 from strategies.signals.base_signal import AbstractSignal
 
@@ -38,7 +39,10 @@ class MomentumSignal(AbstractSignal):
                 -1.0 (maximum bearish) and 1.0 (maximum bullish).
         """
         if len(prices) < (self.slow_ma.period + 1):
-            return 0.0
+            raise InsufficientHistoryError(
+                f"Insufficient price data length {len(prices)} "
+                f"for cross evaluation window {self.slow_ma.period + 1}."
+            )
 
         fast_current = self.fast_ma.calculate(values=prices)
         slow_current = self.slow_ma.calculate(values=prices)
