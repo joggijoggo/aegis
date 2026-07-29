@@ -15,9 +15,12 @@ import pytest
 
 from brokers.backtrader_adapter import BacktraderBrokerAdapter
 from brokers.backtrader_strategy_bridge import BacktraderStrategyBridge
-from core.models import MarketPricePoint
-from core.models import OrderStatus
-from core.models import TransactionSide
+from core.models import (
+    MarketPricePoint,
+    OrderSide,
+    OrderStatus,
+    TransactionSide,
+)
 from strategies.base_strategy import AbstractStrategy
 from tests.test_constants import TEST_REGISTRY
 
@@ -103,9 +106,9 @@ def test_backtrader_bridge_captures_order_lifecycle():
     active_bridge.notify_order(mock_order_completed)
     assert len(bot.order_events) == 1
     first_event = bot.order_events[0]
-    assert first_event.order_id == 42
-    assert first_event.status == OrderStatus.COMPLETED
-    assert first_event.side == TransactionSide.LONG
+    assert first_event.broker_reference == "42"
+    assert first_event.status == OrderStatus.FILLED
+    assert first_event.side == OrderSide.BUY
     assert first_event.executed_price == 1.1025
     assert first_event.executed_size == 100000
 
@@ -118,9 +121,9 @@ def test_backtrader_bridge_captures_order_lifecycle():
     active_bridge.notify_order(mock_order_rejected)
     assert len(bot.order_events) == 2
     second_event = bot.order_events[1]
-    assert second_event.order_id == 43
+    assert second_event.broker_reference == "43"
     assert second_event.status == OrderStatus.REJECTED
-    assert second_event.side == TransactionSide.SHORT
+    assert second_event.side == OrderSide.SELL
 
     mock_order_transient = MagicMock()
     mock_order_transient.status = bt.Order.Submitted
@@ -248,6 +251,77 @@ def test_backtrader_bridge_feeds_warm_up_and_triggers_strategy():
     assert bot.bars_count == 6
     assert round(bot.last_received_price, 4) == 1.1014
 
+# -----------------------------------------------------------------------------
+
+def test_backtrader_bridge_handles_partial_executions():
+    """Ensures inbound gate isolates marginal volume deltas on partial fills."""
+    timestamps = [
+        datetime(2026, 3, 25, 12, 0) + timedelta(minutes=i) for i in range(2)
+    ]
+    data = {
+        "open": [1.1000] * 2,
+        "high": [1.1010] * 2,
+        "low": [1.0990] * 2,
+        "close": [1.1000] * 2,
+        "volume": [1000] * 2,
+        "atr": [0.0010] * 2,
+    }
+    df = pd.DataFrame(data=data, index=timestamps)
+
+    class PandasDataWithATR(bt.feeds.PandasData):
+        lines = ("atr",)
+        params = (("atr", -1),)
+
+    data_feed = PandasDataWithATR(dataname=df, name="EURUSD")
+    cerebro = bt.Cerebro()
+    cerebro.adddata(data_feed)
+
+    mock_bt_strategy = MagicMock()
+    production_broker = BacktraderBrokerAdapter(
+        bt_strategy=mock_bt_strategy,
+        instrument_registry=TEST_REGISTRY,
+    )
+
+    bot = MockAegisBot(broker_bridge=production_broker, warm_up_bars=1)
+    cerebro.addstrategy(
+        BacktraderStrategyBridge,
+        aegis_bot=bot,
+        instrument_registry=TEST_REGISTRY,
+    )
+    strategies = cerebro.run()
+    active_bridge = strategies[0]
+
+    mock_order_partial_1 = MagicMock()
+    mock_order_partial_1.ref = 99
+    mock_order_partial_1.status = bt.Order.Partial
+    mock_order_partial_1.isbuy.return_value = True
+    mock_order_partial_1.executed.price = 1.0850
+    mock_order_partial_1.executed.size = 40000.0
+    mock_order_partial_1.data._name = "EURUSD"
+
+    active_bridge.notify_order(mock_order_partial_1)
+
+    assert len(bot.order_events) == 1
+    event_1 = bot.order_events[0]
+    assert event_1.broker_reference == "99"
+    assert event_1.status == OrderStatus.PARTIALLY_FILLED
+    assert event_1.executed_size == 40000.0
+
+    mock_order_partial_2 = MagicMock()
+    mock_order_partial_2.ref = 99
+    mock_order_partial_2.status = bt.Order.Partial
+    mock_order_partial_2.isbuy.return_value = True
+    mock_order_partial_2.executed.price = 1.0852
+    mock_order_partial_2.executed.size = 100000.0
+    mock_order_partial_2.data._name = "EURUSD"
+
+    active_bridge.notify_order(mock_order_partial_2)
+
+    assert len(bot.order_events) == 2
+    event_2 = bot.order_events[1]
+    assert event_2.broker_reference == "99"
+    assert event_2.status == OrderStatus.PARTIALLY_FILLED
+    assert event_2.executed_size == 60000.0
 # -----------------------------------------------------------------------------
 
 def test_backtrader_bridge_propagates_dynamic_friction_metrics():
