@@ -11,6 +11,13 @@ from enum import Enum
 # -----------------------------------------------------------------------------
 # =============================================================================
 
+class OrderSide(Enum):
+    """Enforces execution direction flags across external gateway adapters."""
+    BUY = "BUY"
+    SELL = "SELL"
+
+# -----------------------------------------------------------------------------
+
 class OrderStatus(Enum):
     """Enforces compile-time type safety for asynchronous lifecycle states."""
 
@@ -106,6 +113,21 @@ class OrderEvent:
 # -----------------------------------------------------------------------------
 
 @dataclass(frozen=True)
+class OrderReceipt:
+    """Immutable data record verifying transaction acceptance by the broker gateway.
+
+    Attributes:
+        broker_reference: The unique tracking identifier returned by the broker.
+        client_order_id: The unique reference generated internally by Aegis.
+        timestamp: The exact temporal window anchor of gateway acceptance.
+    """
+    broker_reference: str
+    client_order_id: str
+    timestamp: datetime
+
+# -----------------------------------------------------------------------------
+
+@dataclass(frozen=True)
 class OrderRequest:
     """Immutable data container representing a strategy trade intention.
 
@@ -119,6 +141,25 @@ class OrderRequest:
     stop_loss_ticks: float
     risk_percentage: float
     confidence_factor: float
+
+# -----------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class PortfolioSnapshot:
+    """Immutable asset valuation metrics snapshot extracted from the broker gateway.
+
+    Attributes:
+        account_id: The unique financial node identification string.
+        raw_balance: The settled cash value available inside the accounting nodes.
+        raw_margin_allocated: The current total margin capital locked by exposure.
+        raw_unrealized_pnl: The cumulative floating valuation of active contracts.
+        timestamp: The exact temporal coordinate of ledger extraction.
+    """
+    account_id: str
+    raw_balance: float
+    raw_margin_allocated: float
+    raw_unrealized_pnl: float
+    timestamp: datetime
 
 # -----------------------------------------------------------------------------
 

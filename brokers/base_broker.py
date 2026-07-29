@@ -3,13 +3,18 @@
 Defines the outbound interface contracts enforcing broker-agnostic order routing.
 """
 
-from abc import ABC
-from abc import abstractmethod
-from typing import Any
+from abc import (
+    ABC,
+    abstractmethod,
+)
 
-from core.models import InstrumentSpecification
-from core.models import OrderType
-from core.models import TransactionSide
+from core.models import (
+    InstrumentSpecification,
+    OrderReceipt,
+    OrderSide,
+    OrderType,
+    PortfolioSnapshot,
+)
 
 # =============================================================================
 # -----------------------------------------------------------------------------
@@ -21,30 +26,54 @@ class AbstractBrokerBridge(ABC):
 # -----------------------------------------------------------------------------
 
     @abstractmethod
+    def get_instrument_specification(self, symbol: str) -> InstrumentSpecification:
+        """Fetches contract specifications for a specific financial instrument.
+
+        Args:
+            symbol: Targeted financial instrument ticker identity.
+
+        Returns:
+            Immutable market constants matching the financial instrument contract.
+        """
+        pass
+
+# -----------------------------------------------------------------------------
+
+    @abstractmethod
+    def get_portfolio_snapshot(self) -> PortfolioSnapshot:
+        """Fetches unified financial metrics records parameters from the broker.
+
+        Returns:
+            Immutable financial snapshot capturing the current ledger state.
+        """
+        pass
+
+# -----------------------------------------------------------------------------
+
+    @abstractmethod
     def place_order(
         self,
         symbol: str,
-        side: TransactionSide,
+        side: OrderSide,
         order_type: OrderType,
         volume_lots: float,
         stop_loss_price: float,
-        take_profit_price: float
-    ) -> dict[str, Any]:
-        """Routes transaction payloads using structural absolute prices levels."""
-        pass
+        take_profit_price: float,
+    ) -> OrderReceipt:
+        """Routes transaction payloads using structural absolute prices levels.
 
-# -----------------------------------------------------------------------------
+        Args:
+            symbol: Target financial instrument symbol tracking identifier.
+            side: Physical execution routing action flag (BUY or SELL).
+            order_type: Execution type specifying immediate (MARKET) or
+                conditional (LIMIT) fulfillment.
+            volume_lots: Transaction size expressed in standardized contracts lots.
+            stop_loss_price: Absolute trigger price for liquidation protection.
+            take_profit_price: Absolute trigger price for profit monetization.
 
-    @abstractmethod
-    def get_portfolio_snapshot(self) -> dict[str, Any]:
-        """Fetches unified financial metrics records parameters from the broker."""
-        pass
-
-# -----------------------------------------------------------------------------
-
-    @abstractmethod
-    def get_instrument_specification(self, symbol: str) -> InstrumentSpecification:
-        """Fetches contract specifications for a specific financial instrument."""
+        Returns:
+            Immutable receipt acknowledging transaction request transmission.
+        """
         pass
 
 # =============================================================================
