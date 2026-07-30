@@ -8,7 +8,12 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 
 from core.aggregators import TimeframeAggregator
-from core.engine import MasterClockBacktestEngine
+from core.engine import AegisExecutionEngine, MasterClockBacktestEngine
+from core.exceptions import MarketTimeoutError
+from core.models import MarketContext, MarketPricePoint
+from market_feeds.base_market_feed import BaseMarketFeed
+from tests.bots.mocks import DummyBot
+from tests.broker_adapters.mocks import DummyBrokerAdapter
 
 # =============================================================================
 # -----------------------------------------------------------------------------
@@ -137,6 +142,53 @@ def test_timeframe_aggregator_daily_and_missing_asset():
 
     # Assert missing asset extraction returns empty array strictly (line 100 safety code)
     assert aggregator.get_completed_bars('UNKNOWN_ASSET', '1d') == []
+
+# =============================================================================
+# -----------------------------------------------------------------------------
+# =============================================================================
+
+class MockMarketFeed(BaseMarketFeed):
+    """Simulates a continuous financial market data feed stream."""
+
+    def __init__(self, sequence: list[MarketContext]) -> None:
+        """Initializes the feed with a pre-defined series of market states."""
+        self._iterator = iter(sequence)
+
+    def __next__(self) -> MarketContext:
+        """Yields the next available market transaction context state."""
+        return next(self._iterator)
+
+# -----------------------------------------------------------------------------
+
+class MockFaultyMarketFeed(BaseMarketFeed):
+    """Simulates an infrastructure network disconnection event."""
+
+    def __next__(self) -> MarketContext:
+        """Triggers an immediate structural market data timeout exception."""
+        raise MarketTimeoutError("Gateway data link connection lost.")
+
+# =============================================================================
+# -----------------------------------------------------------------------------
+# =============================================================================
+
+def test_engine_orchestrates_nominal_flow_and_updates_cache() -> None:
+    """Ensures the master loop updates cache buffers and evaluates bots."""
+    price_point = MarketPricePoint(
+        timestamp=datetime(2026, 7, 30, 12, 0, tzinfo=ZoneInfo("UTC")),
+        mid_price=1.0850,
+        bid=1.0849,
+        ask=1.0851,
+        current_atr=0.0020,
+    )
+    context = MarketContext(prices=price_point)
+    feed = MockMarketFeed(sequence=[context])
+
+    engine = AegisExecutionEngine(
+        bot=DummyBot(),
+        broker_adapter=DummyBrokerAdapter(),
+    )
+
+    engine.run_execution_cycle(market_feed=feed, symbol="EURUSD")
 
 # =============================================================================
 # -----------------------------------------------------------------------------
