@@ -6,9 +6,13 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import pandas as pd
+import pytest
 
 from core.aggregators import TimeframeAggregator
 from core.engine import MasterClockBacktestEngine
+from core.exceptions import MarketTimeoutError
+from core.models import MarketContext
+from market_feeds.base_market_feed import BaseMarketFeed
 
 # =============================================================================
 # -----------------------------------------------------------------------------
@@ -137,6 +141,39 @@ def test_timeframe_aggregator_daily_and_missing_asset():
 
     # Assert missing asset extraction returns empty array strictly (line 100 safety code)
     assert aggregator.get_completed_bars('UNKNOWN_ASSET', '1d') == []
+
+# =============================================================================
+# -----------------------------------------------------------------------------
+# =============================================================================
+
+class MockMarketFeed(BaseMarketFeed):
+    """Simulates a continuous financial market data feed stream."""
+
+    def __init__(self, sequence: list[MarketContext]) -> None:
+        """Initializes the feed with a pre-defined series of market states."""
+        self._iterator = iter(sequence)
+
+    def __next__(self) -> MarketContext:
+        """Yields the next available market transaction context state."""
+        return next(self._iterator)
+
+# -----------------------------------------------------------------------------
+
+class MockFaultyMarketFeed(BaseMarketFeed):
+    """Simulates an infrastructure network disconnection event."""
+
+    def __next__(self) -> MarketContext:
+        """Triggers an immediate structural market data timeout exception."""
+        raise MarketTimeoutError("Gateway data link connection lost.")
+
+# =============================================================================
+# -----------------------------------------------------------------------------
+# =============================================================================
+
+def test_engine_execution_loop_cannot_be_imported_yet() -> None:
+    """Ensures a specific exception is raised if the class is missing."""
+    with pytest.raises(ImportError):
+        from core.engine import AegisExecutionEngine  # noqa: F401
 
 # =============================================================================
 # -----------------------------------------------------------------------------
