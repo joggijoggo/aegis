@@ -24,6 +24,11 @@ class ContractNotFoundError(AegisError):
 
 # -----------------------------------------------------------------------------
 
+class ContractVolumeUnderflowError(AegisError):
+    """Calculated position volume is lower than the broker minimum contract threshold."""
+
+# -----------------------------------------------------------------------------
+
 class MarketTimeoutError(AegisError):
     """Feed timeout expiration."""
 
