@@ -150,7 +150,7 @@ class Order:
 
     Attributes:
         client_order_id: Unique internal tracking identifier.
-        timestamp: Epoch creation time in milliseconds.
+        timestamp: Creation time.
         symbol: Target financial asset.
         side: Execution direction (BUY or SELL).
         order_type: Order routing type (e.g., MARKET or LIMIT).
@@ -161,7 +161,7 @@ class Order:
         take_profit_price: (Optional) Absolute exit price for profit capture.
     """
     client_order_id: str
-    timestamp: int
+    timestamp: datetime
     symbol: str
     side: OrderSide
     order_type: OrderType

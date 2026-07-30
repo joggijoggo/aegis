@@ -5,7 +5,9 @@ adherence across all domain data transfer objects.
 """
 
 from dataclasses import FrozenInstanceError
+from datetime import datetime
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -151,7 +153,7 @@ def test_order_types_with_limit_bounds() -> None:
     """Verifies Order fields and protection prices use strict domain types."""
     order = Order(
         client_order_id="ORD-123",
-        timestamp=1719734400000,
+        timestamp=datetime(2026, 7, 30, 12, 0, tzinfo=ZoneInfo("UTC")),
         symbol="EURUSD",
         side=OrderSide.BUY,
         order_type=OrderType.LIMIT,
@@ -163,7 +165,7 @@ def test_order_types_with_limit_bounds() -> None:
     )
 
     assert isinstance(order.client_order_id, str)
-    assert isinstance(order.timestamp, int)
+    assert isinstance(order.timestamp, datetime)
     assert isinstance(order.symbol, str)
     assert isinstance(order.side, OrderSide)
     assert isinstance(order.order_type, OrderType)

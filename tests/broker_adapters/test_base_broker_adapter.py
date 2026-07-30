@@ -4,7 +4,9 @@ Verifies abstract broker contract enforcement, instantiation restrictions, and
 transaction routing protocols for external gateway adapters.
 """
 
+from datetime import datetime
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -55,7 +57,7 @@ def test_base_broker_adapter_nominal_implementation() -> None:
 
     order = Order(
         client_order_id="ORD-001",
-        timestamp=1719734400000,
+        timestamp=datetime(2026, 7, 30, 12, 0, tzinfo=ZoneInfo("UTC")),
         symbol="EURUSD",
         side=OrderSide.BUY,
         order_type=OrderType.MARKET,
