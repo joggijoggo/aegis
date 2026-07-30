@@ -11,7 +11,11 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
+from bots.base_bot import BaseBot
+from broker_adapters.base_broker_adapter import BaseBrokerAdapter
 from core.accounts import IsolatedAssetAccount
+from core.caching import HistoricalBuffer
+from market_feeds.base_market_feed import BaseMarketFeed
 
 # =============================================================================
 # -----------------------------------------------------------------------------
@@ -134,6 +138,66 @@ class MasterClockBacktestEngine:
                     "trade_history": account.closed_trades_history
                 })
         return compiled_logs
+
+# =============================================================================
+# -----------------------------------------------------------------------------
+# =============================================================================
+
+class AegisExecutionEngine:
+    """The central coordinator for systematic trading execution.
+
+    This engine synchronizes incoming market data with historical price
+    records, consults trading bots for directional intentions, and
+    manages the transmission of transactions to the broker gateway.
+    """
+
+# -----------------------------------------------------------------------------
+
+    def __init__(
+        self,
+        bot: BaseBot,
+        broker_adapter: BaseBrokerAdapter,
+    ) -> None:
+        """Initializes the execution engine and internal memory buffers.
+
+        Args:
+            bot: Target trading bot instance.
+            broker_adapter: Target broker gateway interaction adapter.
+        """
+        self._bot = bot
+        self._broker = broker_adapter
+        self._buffers: dict[str, HistoricalBuffer] = {}
+
+# -----------------------------------------------------------------------------
+
+    def run_execution_cycle(
+        self,
+        symbol: str,
+        market_feed: BaseMarketFeed,
+    ) -> None:
+        """Runs a complete execution cycle over the provided market feed.
+
+        Args:
+            symbol: Target financial instrument identifier.
+            market_feed: Input market data source.
+        """
+        if symbol not in self._buffers:
+            capacity = self._bot.warm_up_period
+            self._buffers[symbol] = HistoricalBuffer(max_size=capacity)
+
+        buffer = self._buffers[symbol]
+
+        try:
+            while True:
+                market_context = next(market_feed)
+                buffer.append(value=market_context.prices.mid_price)
+
+                _ = self._bot.evaluate(
+                    market_context=market_context,
+                    historical_values=buffer.to_list(),
+                )
+        except StopIteration:
+            pass
 
 # =============================================================================
 # -----------------------------------------------------------------------------
