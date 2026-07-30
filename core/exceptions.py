@@ -19,6 +19,11 @@ class BrokerConnectionError(AegisError):
 
 # -----------------------------------------------------------------------------
 
+class ContractNotFoundError(AegisError):
+    """Financial contract is missing from the registry mapping."""
+
+# -----------------------------------------------------------------------------
+
 class MarketTimeoutError(AegisError):
     """Feed timeout expiration."""
 
