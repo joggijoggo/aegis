@@ -26,6 +26,8 @@ def test_abstract_strategy_enforces_exposure_intent_return_contract() -> None:
     historical_values = [1.0800] * 10
 
     strategy = MockAlphaStrategy(warm_up_period=5)
+    assert strategy.warm_up_period == 5
+
     intent = strategy.evaluate(
         market_context=context,
         historical_values=historical_values,

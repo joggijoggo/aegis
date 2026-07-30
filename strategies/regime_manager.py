@@ -62,7 +62,9 @@ class MarketRegimeClassifier:
         trend_weight = max(0.0, (hurst_exponent - 0.5) * 4.0) + kaufman_er * 3.0
 
         # Noise dominates only when Hurst is exactly near 0.5 and ER is neutral
-        noise_weight = max(0.0, 1.0 - abs(hurst_exponent - 0.5) * 2.0) * (1.0 - kaufman_er)
+        noise_weight = (1.0 - kaufman_er) * max(
+            0.0, 1.0 - abs(hurst_exponent - 0.5) * 2.0,
+        )
 
         # Secure total weight sum normalization to clear mathematical boundaries
         total_weight = mr_weight + trend_weight + noise_weight
