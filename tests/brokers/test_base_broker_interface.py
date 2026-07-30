@@ -3,18 +3,18 @@
 Validates compile-time type safety and enforcement of contract compliance.
 """
 
-from datetime import datetime
-from zoneinfo import ZoneInfo
+from decimal import Decimal
 
 import pytest
 
 from brokers.base_broker import AbstractBrokerBridge
 from core.models import (
+    AccountSnapshot,
     InstrumentSpecification,
     OrderReceipt,
     OrderSide,
+    OrderStatus,
     OrderType,
-    PortfolioSnapshot,
 )
 
 # =============================================================================
@@ -40,14 +40,12 @@ class DummyBrokerAdapter(AbstractBrokerBridge):
 
 # -----------------------------------------------------------------------------
 
-    def get_portfolio_snapshot(self) -> PortfolioSnapshot:
+    def get_portfolio_snapshot(self) -> AccountSnapshot:
         """Fetch mock account parameters mimicking the contract."""
-        return PortfolioSnapshot(
-            account_id="IG-ACCOUNT-001",
-            raw_balance=100000.0,
-            raw_margin_allocated=5000.0,
-            raw_unrealized_pnl=2500.0,
-            timestamp=datetime(2026, 7, 29, 12, 0, tzinfo=ZoneInfo("UTC")),
+        return AccountSnapshot(
+            balance=Decimal("100000.00"),
+            equity=Decimal("102500.00"),
+            available_margin=Decimal("95000.00"),
         )
 
 # -----------------------------------------------------------------------------
@@ -63,9 +61,11 @@ class DummyBrokerAdapter(AbstractBrokerBridge):
     ) -> OrderReceipt:
         """Route mock execution payloads mimicking the contract."""
         return OrderReceipt(
-            broker_reference="deal_ref_ig_99482",
+            broker_order_id="deal_ref_ig_99482",
             client_order_id="AEGIS-ORD-001",
-            timestamp=datetime(2026, 7, 29, 12, 0, tzinfo=ZoneInfo("UTC")),
+            status=OrderStatus.FILLED,
+            average_execution_price=Decimal("1.0850"),
+            reject_reason=None,
         )
 
 # =============================================================================
@@ -85,11 +85,10 @@ def test_abstract_broker_bridge_contract_enforcement() -> None:
 
     # 1. Validate portfolio snapshot interface compliance and DTO field values
     snapshot = adapter.get_portfolio_snapshot()
-    assert isinstance(snapshot, PortfolioSnapshot)
-    assert snapshot.account_id == "IG-ACCOUNT-001"
-    assert snapshot.raw_balance == 100000.0
-    assert snapshot.raw_margin_allocated == 5000.0
-    assert snapshot.raw_unrealized_pnl == 2500.0
+    assert isinstance(snapshot, AccountSnapshot)
+    assert snapshot.balance == Decimal("100000.00")
+    assert snapshot.equity == Decimal("102500.00")
+    assert snapshot.available_margin == Decimal("95000.00")
 
     # 2. Validate order placement routing signatures and asynchronous identifiers
     receipt = adapter.place_order(
@@ -101,13 +100,17 @@ def test_abstract_broker_bridge_contract_enforcement() -> None:
         take_profit_price=1.0950,
     )
     assert isinstance(receipt, OrderReceipt)
-    assert receipt.broker_reference == "deal_ref_ig_99482"
+    assert receipt.broker_order_id == "deal_ref_ig_99482"
     assert receipt.client_order_id == "AEGIS-ORD-001"
+    assert receipt.status == OrderStatus.FILLED
+    assert receipt.average_execution_price == Decimal("1.0850")
+    assert receipt.reject_reason is None
 
     # 3. Validate static contract configuration lookups
     spec = adapter.get_instrument_specification("EURUSD")
     assert isinstance(spec, InstrumentSpecification)
     assert spec.tick_size == 0.0001
+
 
 # =============================================================================
 # -----------------------------------------------------------------------------
