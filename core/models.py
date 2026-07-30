@@ -58,10 +58,13 @@ class AccountSnapshot:
     """Financial metrics of the trading account.
 
     Attributes:
+        currency: Base denomination currency unit of the trading
+            account ledger (e.g., "EUR").
         balance: Account cash excluding open positions.
         equity: Account cash including unrealized profits and losses.
         available_margin: Account cash excluding locked position margin.
     """
+    currency: str
     balance: Decimal
     equity: Decimal
     available_margin: Decimal

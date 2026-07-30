@@ -43,6 +43,7 @@ class DummyBrokerAdapter(AbstractBrokerBridge):
     def get_portfolio_snapshot(self) -> AccountSnapshot:
         """Fetch mock account parameters mimicking the contract."""
         return AccountSnapshot(
+            currency='EURUSD',
             balance=Decimal("100000.00"),
             equity=Decimal("102500.00"),
             available_margin=Decimal("95000.00"),
