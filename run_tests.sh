@@ -7,4 +7,4 @@
 source .venv/bin/activate
 
 echo "🧪 [Aegis Shell] Launching automated unit testing & coverage matrix..."
-pytest --cov=core --cov-report=term-missing tests/ "$@"
+pytest --cov=core --cov=broker_adapters --cov=market_feeds --cov=strategies --cov=bots --cov-report=term-missing tests/ "$@"

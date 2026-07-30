@@ -5,6 +5,7 @@ Defines unified structured storage data containers protecting type safety.
 
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal
 from enum import Enum
 
 # =============================================================================
@@ -19,10 +20,11 @@ class OrderSide(Enum):
 # -----------------------------------------------------------------------------
 
 class OrderStatus(Enum):
-    """Enforces compile-time type safety for asynchronous lifecycle states."""
+    """Enforces execution lifecycle state tracking across broker gateways."""
     CANCELED = "CANCELED"
     FILLED = "FILLED"
     PARTIALLY_FILLED = "PARTIALLY_FILLED"
+    PENDING = "PENDING"
     REJECTED = "REJECTED"
 
 # -----------------------------------------------------------------------------
@@ -34,6 +36,14 @@ class OrderType(Enum):
 
 # -----------------------------------------------------------------------------
 
+class TimeInForce(Enum):
+    """Enforces execution expiration boundaries across broker gateways."""
+    DAY = "DAY"
+    GTC = "GTC"
+    IOC = "IOC"
+
+# -----------------------------------------------------------------------------
+
 class TransactionSide(Enum):
     """Enforces execution direction flags across internal accounting nodes."""
     LONG = "LONG"
@@ -42,6 +52,21 @@ class TransactionSide(Enum):
 # =============================================================================
 # -----------------------------------------------------------------------------
 # =============================================================================
+
+@dataclass(frozen=True)
+class AccountSnapshot:
+    """Financial metrics of the trading account.
+
+    Attributes:
+        balance: Account cash excluding open positions.
+        equity: Account cash including unrealized profits and losses.
+        available_margin: Account cash excluding locked position margin.
+    """
+    balance: Decimal
+    equity: Decimal
+    available_margin: Decimal
+
+# -----------------------------------------------------------------------------
 
 @dataclass(frozen=True)
 class ExposureIntent:
@@ -120,6 +145,35 @@ class MarketContext:
 # -----------------------------------------------------------------------------
 
 @dataclass(frozen=True)
+class Order:
+    """Broker execution request.
+
+    Attributes:
+        client_order_id: Unique internal tracking identifier.
+        timestamp: Epoch creation time in milliseconds.
+        symbol: Target financial asset.
+        side: Execution direction (BUY or SELL).
+        order_type: Order routing type (e.g., MARKET or LIMIT).
+        time_in_force: Execution expiration policy (e.g., DAY or IOC).
+        quantity: Order volume expressed in absolute asset units.
+        price: Target execution price or None for MARKET orders.
+        stop_loss_price: (Optional) Absolute exit price for loss protection.
+        take_profit_price: (Optional) Absolute exit price for profit capture.
+    """
+    client_order_id: str
+    timestamp: int
+    symbol: str
+    side: OrderSide
+    order_type: OrderType
+    time_in_force: TimeInForce
+    quantity: Decimal
+    price: Decimal | None = None
+    stop_loss_price: Decimal | None = None
+    take_profit_price: Decimal | None = None
+
+# -----------------------------------------------------------------------------
+
+@dataclass(frozen=True)
 class OrderEvent:
     """Captures absolute transactional metadata generated during order updates.
 
@@ -144,16 +198,20 @@ class OrderEvent:
 
 @dataclass(frozen=True)
 class OrderReceipt:
-    """Immutable data record verifying transaction acceptance by the broker gateway.
+    """Broker execution response details.
 
     Attributes:
-        broker_reference: The unique tracking identifier returned by the broker.
-        client_order_id: The unique reference generated internally by Aegis.
-        timestamp: The exact temporal window anchor of gateway acceptance.
+        broker_order_id: (Optional) Unique broker tracking identifier.
+        client_order_id: Unique internal tracking identifier.
+        status: Order execution lifecycle state.
+        average_execution_price: (Optional) Volume-weighted execution price.
+        reject_reason: (Optional) Broker rejection cause description.
     """
-    broker_reference: str
+    broker_order_id: str | None
     client_order_id: str
-    timestamp: datetime
+    status: OrderStatus
+    average_execution_price: Decimal | None = None
+    reject_reason: str | None = None
 
 # -----------------------------------------------------------------------------
 

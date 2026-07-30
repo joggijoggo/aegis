@@ -4,4 +4,4 @@
 source .venv/bin/activate
 
 echo "🛡️ [Aegis Shell] Launching code style and compliance scans..."
-ruff check core/ tests/ "$@"
+ruff check strategies/ broker_adapters/ market_feeds/ strategies/ bots/ core/ tests/ "$@"
