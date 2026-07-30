@@ -29,6 +29,11 @@ class MarketTimeoutError(AegisError):
 
 # -----------------------------------------------------------------------------
 
+class MissingExchangeRateError(AegisError):
+    """Requested currency exchange rate is missing."""
+
+# -----------------------------------------------------------------------------
+
 class StrategyError(AegisError):
     """Exception for strategy and signal calculation anomalies."""
 
