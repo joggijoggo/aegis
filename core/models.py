@@ -11,17 +11,24 @@ from enum import Enum
 # -----------------------------------------------------------------------------
 # =============================================================================
 
+class OrderSide(Enum):
+    """Enforces execution direction flags across external gateway adapters."""
+    BUY = "BUY"
+    SELL = "SELL"
+
+# -----------------------------------------------------------------------------
+
 class OrderStatus(Enum):
     """Enforces compile-time type safety for asynchronous lifecycle states."""
-
-    COMPLETED = "COMPLETED"
+    CANCELED = "CANCELED"
+    FILLED = "FILLED"
+    PARTIALLY_FILLED = "PARTIALLY_FILLED"
     REJECTED = "REJECTED"
 
 # -----------------------------------------------------------------------------
 
 class OrderType(Enum):
     """Enforces structural routing parameter limitations for orders executions."""
-
     MARKET = "MARKET"
     LIMIT = "LIMIT"
 
@@ -29,13 +36,30 @@ class OrderType(Enum):
 
 class TransactionSide(Enum):
     """Enforces execution direction flags across internal accounting nodes."""
-
     LONG = "LONG"
     SHORT = "SHORT"
 
 # =============================================================================
 # -----------------------------------------------------------------------------
 # =============================================================================
+
+@dataclass(frozen=True)
+class ExposureIntent:
+    """Immutable data record capturing passive execution desires.
+
+    Attributes:
+        alpha_direction: The continuous trend conviction scalar bounded strictly
+            between -1.0 and 1.0. A value of 0.0 explicitly enforces a flat position
+            and triggers a portfolio liquidation. A value of None indicates no active
+            opinion, instructing the engine to maintain ongoing exposures.
+        stop_loss_ticks: The protective exit distance measured in ticks.
+        take_profit_ticks: The target take-profit distance measured in ticks.
+    """
+    alpha_direction: float | None = None
+    stop_loss_ticks: float = 0.0
+    take_profit_ticks: float = 0.0
+
+# -----------------------------------------------------------------------------
 
 @dataclass(frozen=True)
 class InstrumentSpecification:
@@ -83,11 +107,24 @@ class MarketPricePoint:
 # -----------------------------------------------------------------------------
 
 @dataclass(frozen=True)
+class MarketContext:
+    """Immutable record capturing the current market state.
+
+    Attributes:
+        prices: Current market price information.
+        volume: (Optional) Current market trading volume.
+    """
+    prices: MarketPricePoint
+    volume: float | None = None
+
+# -----------------------------------------------------------------------------
+
+@dataclass(frozen=True)
 class OrderEvent:
     """Captures absolute transactional metadata generated during order updates.
 
     Attributes:
-        order_id: The unique system identifier assigned to this request.
+        broker_reference: The unique tracking identifier returned by the broker.
         symbol: The targeted financial instrument ticker.
         status: The exact state inside the execution lifecycle.
         side: The directional positioning constraint of the order.
@@ -95,12 +132,27 @@ class OrderEvent:
         executed_size: The absolute amount of lots fulfilled by the execution.
         timestamp: The definitive execution time of the transaction.
     """
-    order_id: int
+    broker_reference: str
     symbol: str
-    status: "OrderStatus"
-    side: "TransactionSide"
+    status: OrderStatus
+    side: OrderSide
     executed_price: float
-    executed_size: int
+    executed_size: float
+    timestamp: datetime
+
+# -----------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class OrderReceipt:
+    """Immutable data record verifying transaction acceptance by the broker gateway.
+
+    Attributes:
+        broker_reference: The unique tracking identifier returned by the broker.
+        client_order_id: The unique reference generated internally by Aegis.
+        timestamp: The exact temporal window anchor of gateway acceptance.
+    """
+    broker_reference: str
+    client_order_id: str
     timestamp: datetime
 
 # -----------------------------------------------------------------------------
@@ -119,6 +171,25 @@ class OrderRequest:
     stop_loss_ticks: float
     risk_percentage: float
     confidence_factor: float
+
+# -----------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class PortfolioSnapshot:
+    """Immutable asset valuation metrics snapshot extracted from the broker gateway.
+
+    Attributes:
+        account_id: The unique financial node identification string.
+        raw_balance: The settled cash value available inside the accounting nodes.
+        raw_margin_allocated: The current total margin capital locked by exposure.
+        raw_unrealized_pnl: The cumulative floating valuation of active contracts.
+        timestamp: The exact temporal coordinate of ledger extraction.
+    """
+    account_id: str
+    raw_balance: float
+    raw_margin_allocated: float
+    raw_unrealized_pnl: float
+    timestamp: datetime
 
 # -----------------------------------------------------------------------------
 
