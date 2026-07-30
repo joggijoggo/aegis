@@ -1,100 +1,143 @@
-from decimal import Decimal
-from core.models import OrderRequest
-from core.models import RiskValidationResult
-from core.registry import InstrumentRegistry
+"""Aegis Framework - Position Sizer.
+
+Calculates standardized transaction contracts based on fixed account balance
+risk parameters.
+"""
+
+import uuid
+from decimal import Decimal, ROUND_DOWN
+
+from core.currency_converter import CurrencyConverter
+from core.exceptions import ContractVolumeUnderflowError
+from core.models import (
+    AccountSnapshot,
+    ContractSpecification,
+    ExposureIntent,
+    MarketContext,
+    Order,
+    OrderSide,
+    OrderType,
+    TimeInForce,
+)
 
 # =============================================================================
 # -----------------------------------------------------------------------------
 # =============================================================================
 
 class PositionSizer:
-    """Universal sizing calculator bound by contract parameters and risk scores."""
+    """Generates executable transaction orders aligned with capital risk bounds."""
 
 # -----------------------------------------------------------------------------
 
-    def __init__(self, instrument_registry: InstrumentRegistry) -> None:
-        """Initialize the positioning engine with the global specifications mapping.
+    def __init__(self, currency_converter: CurrencyConverter):
+        """Initializes the position sizer.
 
         Args:
-            instrument_registry: Central database containing contract constants.
+            currency_converter: Service executing currency exchange translations.
         """
-        self._instrument_registry = instrument_registry
+        self._currency_converter = currency_converter
 
 # -----------------------------------------------------------------------------
 
-    def compute_volume(
+    def create_order(
         self,
-        account_equity: float,
-        order_request: OrderRequest,
-    ) -> RiskValidationResult:
-        """Calculate the optimized trading size using the calibrated risk equation.
-
-        Formula:
-            Lots = (Equity * Risk% * Confidence) / (StopLossTicks * TickLoss)
+        exposure_intent: ExposureIntent,
+        risk_percent: Decimal,
+        contract_specification: ContractSpecification,
+        account_snapshot: AccountSnapshot,
+        market_context: MarketContext,
+    ) -> Order:
+        """Creates an execution order sized to a specific balance risk percentage.
 
         Args:
-            account_equity: The current total net asset value of the portfolio.
-            order_request: The raw parameters of the trading request.
-
-        Returns:
-            The structured verdict containing the final calculated size.
+            exposure_intent: Bot intent containing direction, take profit and
+                stop loss ticks.
+            risk_percent: Maximum fractional capital risk allowed per transaction.
+            contract_specification: Microstructural parameters of the asset.
+            account_snapshot: Current financial state providing account balance.
+            market_context: Current market price information.
         """
-        if order_request.risk_percentage < 0.0 or order_request.confidence_factor < 0.0:
-            return RiskValidationResult(False, 0.0, "Risk parameters cannot be negative.")
-
-        if order_request.confidence_factor > 1.0:
-            return RiskValidationResult(
-                is_approved=False,
-                calculated_volume_lots=0.0,
-                rejection_reason=(
-                    "Confidence factor cannot amplify "
-                    "maximum risk parameters."
-                ),
+        # 1. Determine execution side and entry price base with strict validation
+        if exposure_intent.alpha_direction > Decimal('0'):
+            side = OrderSide.BUY
+            entry_price = Decimal(str(market_context.prices.ask))
+            stop_modifier = Decimal('-1')
+            profit_modifier = Decimal('1')
+        elif exposure_intent.alpha_direction < Decimal('0'):
+            side = OrderSide.SELL
+            entry_price = Decimal(str(market_context.prices.bid))
+            stop_modifier = Decimal('1')
+            profit_modifier = Decimal('-1')
+        else:
+            raise NotImplementedError(
+                'Position closure or neutral signals are not yet '
+                f'implemented: {exposure_intent.alpha_direction}'
             )
 
-        spec = self._instrument_registry.get_specification(symbol=order_request.symbol)
+        # 2. Derive monetary tick evaluation translated to account currency
+        native_tick_value = (
+            contract_specification.contract_multiplier
+            * contract_specification.tick_size
+        )
+        account_tick_value = self._currency_converter.convert(
+            amount=native_tick_value,
+            from_currency=contract_specification.quote_currency,
+            to_currency=account_snapshot.currency,
+        )
 
-        # Cast raw floats to string-based exact decimal instances
-        equity_dec = Decimal(str(account_equity))
-        risk_pct_dec = Decimal(str(order_request.risk_percentage))
-        confidence_dec = Decimal(str(order_request.confidence_factor))
-        stop_ticks_dec = Decimal(str(order_request.stop_loss_ticks))
+        # 3. Apply sizing equations mapping cash risk limits to tick distances
+        max_risk_amount = account_snapshot.balance * risk_percent
+        risk_per_contract = (
+            Decimal(str(exposure_intent.stop_loss_ticks))
+            * account_tick_value
+        )
+        raw_quantity = max_risk_amount / risk_per_contract
 
-        tick_size_dec = Decimal(str(spec.tick_size))
-        lot_size_dec = Decimal(str(spec.lot_size))
-        lot_step_dec = Decimal(str(spec.lot_step))
-        min_lot_dec = Decimal(str(spec.min_lot))
+        # 4. Enforce fractional discrete step routing boundaries
+        step = contract_specification.contract_step
+        quantized_quantity = (raw_quantity / step).quantize(
+            Decimal('1'), rounding=ROUND_DOWN
+        ) * step
 
-        # Compute monetary risk budget allowed via high-precision math
-        risk_fraction = risk_pct_dec / Decimal("100.0")
-        risk_budget = equity_dec * risk_fraction * confidence_dec
-
-        # Compute accurate total loss per lot unit profile
-        tick_loss_per_lot = tick_size_dec * lot_size_dec
-        total_loss_per_lot = stop_ticks_dec * tick_loss_per_lot
-
-        if total_loss_per_lot <= Decimal("0.0"):
-            return RiskValidationResult(
-                is_approved=False,
-                calculated_volume_lots=0.0,
-                rejection_reason="Invalid risk or stop loss distance specification.",
+        if quantized_quantity < contract_specification.min_contract_size:
+            raise ContractVolumeUnderflowError(
+                f'Calculated volume {quantized_quantity} violates broker '
+                f'minimum threshold: {contract_specification.min_contract_size}'
             )
 
-        # Derive raw volume and apply strict base-10 floor truncation
-        raw_volume = risk_budget / total_loss_per_lot
-        truncated_volume = (raw_volume // lot_step_dec) * lot_step_dec
+        # 5. Extract temporal tracking marker from snapshot coordinates
+        execution_time = market_context.prices.timestamp
 
-        # Cast back to standard float signature after exact calculations
-        final_volume = float(truncated_volume)
+        # 6. Extrapolate target absolute protective boundaries from entry price
+        tick_size = contract_specification.tick_size
+        stop_loss_distance = (
+            Decimal(str(exposure_intent.stop_loss_ticks)) * tick_size
+        )
+        take_profit_distance = (
+            Decimal(str(exposure_intent.take_profit_ticks)) * tick_size
+        )
 
-        if final_volume < float(min_lot_dec):
-            return RiskValidationResult(
-                is_approved=False,
-                calculated_volume_lots=0.0,
-                rejection_reason="Calculated volume is below minimum contract size.",
-            )
+        stop_loss_price = entry_price + (stop_modifier * stop_loss_distance)
+        take_profit_price = (
+            entry_price + (profit_modifier * take_profit_distance)
+        )
 
-        return RiskValidationResult(True, final_volume, "")
+        # 7. Generate a unique, deterministic internal tracking identifier
+        epoch_timestamp = int(execution_time.timestamp())
+        client_order_id = f'AEGIS-{epoch_timestamp}-{uuid.uuid4()}'
+
+        return Order(
+            client_order_id=client_order_id,
+            timestamp=execution_time,
+            symbol=contract_specification.symbol,
+            side=side,
+            order_type=OrderType.MARKET,
+            time_in_force=TimeInForce.DAY,
+            quantity=quantized_quantity,
+            price=None,
+            stop_loss_price=stop_loss_price,
+            take_profit_price=take_profit_price,
+        )
 
 # =============================================================================
 # -----------------------------------------------------------------------------

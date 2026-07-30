@@ -38,6 +38,7 @@ def test_base_broker_adapter_nominal_implementation() -> None:
 
         def get_account_snapshot(self) -> AccountSnapshot:
             return AccountSnapshot(
+                currency='EURUSD',
                 balance=Decimal("10000.00"),
                 equity=Decimal("10000.00"),
                 available_margin=Decimal("10000.00"),

@@ -19,8 +19,23 @@ class BrokerConnectionError(AegisError):
 
 # -----------------------------------------------------------------------------
 
+class ContractNotFoundError(AegisError):
+    """Financial contract is missing from the registry mapping."""
+
+# -----------------------------------------------------------------------------
+
+class ContractVolumeUnderflowError(AegisError):
+    """Calculated position volume is lower than the broker minimum contract threshold."""
+
+# -----------------------------------------------------------------------------
+
 class MarketTimeoutError(AegisError):
     """Feed timeout expiration."""
+
+# -----------------------------------------------------------------------------
+
+class MissingExchangeRateError(AegisError):
+    """Requested currency exchange rate is missing."""
 
 # -----------------------------------------------------------------------------
 

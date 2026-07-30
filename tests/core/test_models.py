@@ -28,6 +28,7 @@ from core.models import (
 def test_account_snapshot_immutability() -> None:
     """Verifies AccountSnapshot raises FrozenInstanceError upon modification."""
     snapshot = AccountSnapshot(
+        currency='EURUSD',
         balance=Decimal("10000.00"),
         equity=Decimal("10500.00"),
         available_margin=Decimal("8000.00"),
@@ -41,6 +42,7 @@ def test_account_snapshot_immutability() -> None:
 def test_account_snapshot_types() -> None:
     """Verifies AccountSnapshot strictly enforces Decimal instances."""
     snapshot = AccountSnapshot(
+        currency='EURUSD',
         balance=Decimal("10000.00"),
         equity=Decimal("10500.00"),
         available_margin=Decimal("8000.00"),

@@ -6,6 +6,7 @@ forward-fill time-alignment algorithms.
 
 from datetime import datetime
 from datetime import timedelta
+from decimal import Decimal
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -15,6 +16,8 @@ from bots.base_bot import BaseBot
 from broker_adapters.base_broker_adapter import BaseBrokerAdapter
 from core.accounts import IsolatedAssetAccount
 from core.caching import HistoricalBuffer
+from core.contract_registry import ContractRegistry
+from core.position_sizer import PositionSizer
 from market_feeds.base_market_feed import BaseMarketFeed
 
 # =============================================================================
@@ -143,13 +146,14 @@ class MasterClockBacktestEngine:
 # -----------------------------------------------------------------------------
 # =============================================================================
 
-class AegisExecutionEngine:
-    """The central coordinator for systematic trading execution.
+"""Aegis Framework - Execution Engine.
 
-    This engine synchronizes incoming market data with historical price
-    records, consults trading bots for directional intentions, and
-    manages the transmission of transactions to the broker gateway.
-    """
+Orchestrates execution cycles by consuming market feeds, driving strategy bot
+evaluations, and routing risk-sized orders to the broker gateway.
+"""
+
+class AegisExecutionEngine:
+    """Core orchestrator synchronizing market data ingestion and trading logic."""
 
 # -----------------------------------------------------------------------------
 
@@ -157,15 +161,22 @@ class AegisExecutionEngine:
         self,
         bot: BaseBot,
         broker_adapter: BaseBrokerAdapter,
-    ) -> None:
-        """Initializes the execution engine and internal memory buffers.
+        contract_registry: ContractRegistry,
+        position_sizer: PositionSizer,
+    ):
+        """Initializes the execution engine.
 
         Args:
-            bot: Target trading bot instance.
-            broker_adapter: Target broker gateway interaction adapter.
+            bot: Trading strategy instance executing evaluation logic.
+            broker_adapter: Infrastructure bridge mapping orders to the venue.
+            contract_registry: Repository storing contract specifications.
+            position_sizer: Component generating risk-sized execution orders.
         """
         self._bot = bot
-        self._broker = broker_adapter
+        self._broker_adapter = broker_adapter
+        self._contract_registry = contract_registry
+        self._position_sizer = position_sizer
+        self._risk_percent = Decimal('0.01')
         self._buffers: dict[str, HistoricalBuffer] = {}
 
 # -----------------------------------------------------------------------------
@@ -192,10 +203,32 @@ class AegisExecutionEngine:
                 market_context = next(market_feed)
                 buffer.append(value=market_context.prices.mid_price)
 
-                _ = self._bot.evaluate(
+                exposure_intent = self._bot.evaluate(
                     market_context=market_context,
                     historical_values=buffer.to_list(),
                 )
+
+                if exposure_intent.alpha_direction is None:
+                    continue
+
+                if exposure_intent.alpha_direction == 0.0:
+                    raise NotImplementedError('Close position')
+
+                contract_specification = (
+                    self._contract_registry.get_specification(symbol)
+                )
+                account_snapshot = self._broker_adapter.get_account_snapshot()
+
+                order = self._position_sizer.create_order(
+                    exposure_intent=exposure_intent,
+                    risk_percent=self._risk_percent,
+                    contract_specification=contract_specification,
+                    account_snapshot=account_snapshot,
+                    market_context=market_context,
+                )
+
+                self._broker_adapter.execute_order(order)
+
         except StopIteration:
             pass
 
