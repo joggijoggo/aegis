@@ -45,8 +45,12 @@ class AegisMeanReversionBot(AbstractStrategy):
         regime = self.classifier.classify_series(historical_closes)
 
         # Execution criteria: Mean Reversion dominant with significant price expansion
-        if regime.mean_reversion > 0.40 and price_snapshot.mid_price > rolling_mean * 1.02:
-            # Instantiation of explicable post-mortem snapshots parameters PRIOR to order routing
+        if (
+            regime.mean_reversion > 0.40 and
+            price_snapshot.mid_price > rolling_mean * 1.02
+        ):
+            # Instantiation of explicable post-mortem snapshots parameters
+            # PRIOR to order routing
             snapshot = TradeTelemetrySnapshot(
                 timestamp=price_snapshot.timestamp,
                 indicator_value=rolling_mean,
