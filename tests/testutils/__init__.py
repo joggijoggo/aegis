@@ -20,6 +20,7 @@ from tests.testutils.constants import (
 from tests.testutils.factories import (
     create_account_snapshot_factory as create_account_snapshot_factory,
     create_contract_specification_factory as create_contract_specification_factory,
+    create_market_context_factory as create_market_context_factory,
     create_order_factory as create_order_factory,
 )
 from tests.testutils.mocks import (
