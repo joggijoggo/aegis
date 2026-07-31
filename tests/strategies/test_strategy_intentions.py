@@ -10,10 +10,9 @@ from core.exceptions import (
     InvalidSignalError,
 )
 from core.models import ExposureIntent
-from tests.strategies.factories import create_mock_market_context
-from tests.strategies.mocks import (
-    MockAlphaStrategy,
-    MockAnomalousStrategy,
+from tests.testutils import (
+    FakeStrategy,
+    create_market_context_factory,
 )
 
 # =============================================================================
@@ -22,10 +21,10 @@ from tests.strategies.mocks import (
 
 def test_abstract_strategy_enforces_exposure_intent_return_contract() -> None:
     """Ensures strategy execution cycles return a structured intent DTO."""
-    context = create_mock_market_context()
+    context = create_market_context_factory()
     historical_values = [1.0800] * 10
 
-    strategy = MockAlphaStrategy(warm_up_period=5)
+    strategy = FakeStrategy(warm_up_period=5)
     assert strategy.warm_up_period == 5
 
     intent = strategy.evaluate(
@@ -41,10 +40,10 @@ def test_abstract_strategy_enforces_exposure_intent_return_contract() -> None:
 
 def test_abstract_strategy_raises_insufficient_history_error() -> None:
     """Ensures data feeding shortfalls trigger immediate specific exceptions."""
-    context = create_mock_market_context()
+    context = create_market_context_factory()
     historical_values = [1.0800] * 3
 
-    strategy = MockAlphaStrategy(warm_up_period=5)
+    strategy = FakeStrategy(warm_up_period=5)
 
     with pytest.raises(InsufficientHistoryError):
         strategy.evaluate(market_context=context, historical_values=historical_values)
@@ -53,10 +52,12 @@ def test_abstract_strategy_raises_insufficient_history_error() -> None:
 
 def test_abstract_strategy_raises_invalid_signal_error() -> None:
     """Ensures mathematical signal drifts trigger immediate contract exceptions."""
-    context = create_mock_market_context()
+    context = create_market_context_factory()
     historical_values = [1.0800] * 10
 
-    strategy = MockAnomalousStrategy(warm_up_period=5)
+    # On injecte dynamiquement l'intention corrompue dans l'unique FakeStrategy
+    corrupted_intent = ExposureIntent(alpha_direction=1.5)
+    strategy = FakeStrategy(exposure_intent=corrupted_intent, warm_up_period=5)
 
     with pytest.raises(InvalidSignalError):
         strategy.evaluate(market_context=context, historical_values=historical_values)
