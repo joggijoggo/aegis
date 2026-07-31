@@ -65,23 +65,6 @@ class OrderReceipt:
     average_execution_price: Decimal | None = None
     reject_reason: str | None = None
 
-# -----------------------------------------------------------------------------
-
-@dataclass(frozen=True)
-class OrderRequest:
-    """Immutable data container representing a strategy trade intention.
-
-    Attributes:
-        symbol: The targeted financial asset identifier.
-        stop_loss_ticks: The structural protection distance measured in ticks.
-        risk_percentage: The maximum fraction of account equity risked on the trade.
-        confidence_factor: A fractional scaling coefficient that can only reduce size.
-    """
-    symbol: str
-    stop_loss_ticks: float
-    risk_percentage: float
-    confidence_factor: float
-
 # =============================================================================
 # -----------------------------------------------------------------------------
 # =============================================================================

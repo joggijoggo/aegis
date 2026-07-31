@@ -5,7 +5,6 @@ telemetry logging matrices.
 """
 
 from dataclasses import dataclass
-from datetime import datetime
 
 # =============================================================================
 # -----------------------------------------------------------------------------
@@ -41,21 +40,6 @@ class RegimeConfidenceVector:
     mean_reversion: float
     trending: float
     noise: float
-
-# -----------------------------------------------------------------------------
-
-@dataclass(frozen=True)
-class TradeTelemetrySnapshot:
-    """Captures explicable post-mortem operational metrics records snapshots.
-
-    Attributes:
-        timestamp: The technical log time of this measurement.
-        indicator_value: The numerical output of the underlying formula.
-        regime_vector: The complex mathematical probability context of the market.
-    """
-    timestamp: datetime
-    indicator_value: float
-    regime_vector: RegimeConfidenceVector
 
 # =============================================================================
 # -----------------------------------------------------------------------------
