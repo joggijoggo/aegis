@@ -48,30 +48,6 @@ class Order:
 
 # -----------------------------------------------------------------------------
 
-# LEGACY
-@dataclass(frozen=True)
-class OrderEvent:
-    """Captures absolute transactional metadata generated during order updates.
-
-    Attributes:
-        broker_reference: The unique tracking identifier returned by the broker.
-        symbol: The targeted financial instrument ticker.
-        status: The exact state inside the execution lifecycle.
-        side: The directional positioning constraint of the order.
-        executed_price: The financial settlement price recorded by the broker.
-        executed_size: The absolute amount of lots fulfilled by the execution.
-        timestamp: The definitive execution time of the transaction.
-    """
-    broker_reference: str
-    symbol: str
-    status: OrderStatus
-    side: OrderSide
-    executed_price: float
-    executed_size: float
-    timestamp: datetime
-
-# -----------------------------------------------------------------------------
-
 @dataclass(frozen=True)
 class OrderReceipt:
     """Broker execution response details.
@@ -88,23 +64,6 @@ class OrderReceipt:
     status: OrderStatus
     average_execution_price: Decimal | None = None
     reject_reason: str | None = None
-
-# -----------------------------------------------------------------------------
-
-@dataclass(frozen=True)
-class OrderRequest:
-    """Immutable data container representing a strategy trade intention.
-
-    Attributes:
-        symbol: The targeted financial asset identifier.
-        stop_loss_ticks: The structural protection distance measured in ticks.
-        risk_percentage: The maximum fraction of account equity risked on the trade.
-        confidence_factor: A fractional scaling coefficient that can only reduce size.
-    """
-    symbol: str
-    stop_loss_ticks: float
-    risk_percentage: float
-    confidence_factor: float
 
 # =============================================================================
 # -----------------------------------------------------------------------------
