@@ -27,4 +27,5 @@ from tests.testutils.mocks import (
     FakeBot as FakeBot,
     FakeBrokerAdapter as FakeBrokerAdapter,
     FakeMarketFeed as FakeMarketFeed,
+    FakeStrategy as FakeStrategy,
 )

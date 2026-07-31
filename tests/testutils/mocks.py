@@ -11,6 +11,7 @@ from core.models import (
     OrderStatus,
 )
 from market_feeds.base_market_feed import BaseMarketFeed
+from strategies.base_strategy import AbstractStrategy
 from tests.testutils.factories import create_account_snapshot_factory
 
 # =============================================================================
@@ -98,6 +99,34 @@ class FakeMarketFeed(BaseMarketFeed):
     def __next__(self) -> MarketContext:
         """Gets the next sequential market state context."""
         return next(self._iterator)
+
+# =============================================================================
+# -----------------------------------------------------------------------------
+# =============================================================================
+
+class FakeStrategy(AbstractStrategy):
+    """Fake trading strategy."""
+
+# -----------------------------------------------------------------------------
+
+    def __init__(
+        self,
+        exposure_intent: ExposureIntent | None = None,
+        warm_up_period: int = 0,
+    ) -> None:
+        """Initializes the fake strategy settings."""
+        super().__init__(warm_up_period=warm_up_period)
+        self._exposure_intent = exposure_intent or ExposureIntent(1.0, 20.0)
+
+# -----------------------------------------------------------------------------
+
+    def _evaluate(
+        self,
+        market_context: MarketContext,
+        historical_values: list[float],
+    ) -> ExposureIntent:
+        """Executes the strategy calculation logic."""
+        return self._exposure_intent
 
 # =============================================================================
 # -----------------------------------------------------------------------------
