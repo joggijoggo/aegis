@@ -48,30 +48,6 @@ class Order:
 
 # -----------------------------------------------------------------------------
 
-# LEGACY
-@dataclass(frozen=True)
-class OrderEvent:
-    """Captures absolute transactional metadata generated during order updates.
-
-    Attributes:
-        broker_reference: The unique tracking identifier returned by the broker.
-        symbol: The targeted financial instrument ticker.
-        status: The exact state inside the execution lifecycle.
-        side: The directional positioning constraint of the order.
-        executed_price: The financial settlement price recorded by the broker.
-        executed_size: The absolute amount of lots fulfilled by the execution.
-        timestamp: The definitive execution time of the transaction.
-    """
-    broker_reference: str
-    symbol: str
-    status: OrderStatus
-    side: OrderSide
-    executed_price: float
-    executed_size: float
-    timestamp: datetime
-
-# -----------------------------------------------------------------------------
-
 @dataclass(frozen=True)
 class OrderReceipt:
     """Broker execution response details.
