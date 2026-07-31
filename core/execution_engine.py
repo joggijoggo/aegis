@@ -92,7 +92,7 @@ class AegisExecutionEngine:
                     market_context=market_context,
                 )
 
-                self._broker_adapter.execute_order(order)
+                self._broker_adapter.submit_order(order)
 
         except StopIteration:
             pass
