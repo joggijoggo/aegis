@@ -19,7 +19,7 @@ from tests.testutils import (
 # -----------------------------------------------------------------------------
 # =============================================================================
 
-def test_abstract_strategy_enforces_exposure_intent_return_contract() -> None:
+def test_base_strategy_enforces_exposure_intent_return_contract() -> None:
     """Ensures strategy execution cycles return a structured intent DTO."""
     context = create_market_context_factory()
     historical_values = [1.0800] * 10
@@ -38,7 +38,7 @@ def test_abstract_strategy_enforces_exposure_intent_return_contract() -> None:
 
 # -----------------------------------------------------------------------------
 
-def test_abstract_strategy_raises_insufficient_history_error() -> None:
+def test_base_strategy_raises_insufficient_history_error() -> None:
     """Ensures data feeding shortfalls trigger immediate specific exceptions."""
     context = create_market_context_factory()
     historical_values = [1.0800] * 3
@@ -50,7 +50,7 @@ def test_abstract_strategy_raises_insufficient_history_error() -> None:
 
 # -----------------------------------------------------------------------------
 
-def test_abstract_strategy_raises_invalid_signal_error() -> None:
+def test_base_strategy_raises_invalid_signal_error() -> None:
     """Ensures mathematical signal drifts trigger immediate contract exceptions."""
     context = create_market_context_factory()
     historical_values = [1.0800] * 10
