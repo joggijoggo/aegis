@@ -15,7 +15,7 @@ from core.exceptions import MissingExchangeRateError
 # =============================================================================
 
 def test_converter_executes_direct_conversion_vector() -> None:
-    """Ensures direct currency cross vectors multiplicate target amounts."""
+    """Validates direct conversion scaling calculations."""
     converter = CurrencyConverter()
     converter.update_rate(pair='EURUSD', rate=Decimal('1.0850'))
 
@@ -30,7 +30,7 @@ def test_converter_executes_direct_conversion_vector() -> None:
 # -----------------------------------------------------------------------------
 
 def test_converter_executes_inverse_conversion_vector() -> None:
-    """Ensures missing direct vectors trigger inverse division mechanics."""
+    """Validates inverse conversion division mechanics."""
     converter = CurrencyConverter()
     converter.update_rate(pair='EURUSD', rate=Decimal('1.0850'))
 
@@ -44,9 +44,8 @@ def test_converter_executes_inverse_conversion_vector() -> None:
 
 # -----------------------------------------------------------------------------
 
-
 def test_converter_raises_missing_exchange_rate_error() -> None:
-    """Ensures unregistered currency pairs route to specific domain alert."""
+    """Validates exchange vector missing exception mapping."""
     converter = CurrencyConverter()
 
     with pytest.raises(MissingExchangeRateError):
@@ -59,7 +58,7 @@ def test_converter_raises_missing_exchange_rate_error() -> None:
 # -----------------------------------------------------------------------------
 
 def test_converter_skips_calculation_for_identical_currencies() -> None:
-    """Ensures identical source and target currencies return original volume."""
+    """Validates short-circuit mapping for matching currency inputs."""
     converter = CurrencyConverter()
     amount = Decimal('100.00')
 
