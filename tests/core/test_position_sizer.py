@@ -1,187 +1,213 @@
 """Aegis Framework - Position Sizer Unit Tests.
 
-Verifies risk budget enforcement, dynamic sizing models, and leverage caps.
+Verifies mathematical risk-based volume scaling, multi-currency conversion,
+and contract volume underflow exception routing.
 """
 
-from core.models import OrderRequest
-from core.models import RiskValidationResult
-from tests.test_constants import TEST_REGISTRY
+from decimal import Decimal
+
+import pytest
+
+from core.currency_converter import CurrencyConverter
+from core.exceptions import ContractVolumeUnderflowError
+from core.models import (
+    ExposureIntent,
+    OrderSide,
+    OrderType,
+    TimeInForce,
+)
 from core.position_sizer import PositionSizer
+from tests.testutils import (
+    create_account_snapshot_factory,
+    create_contract_specification_factory,
+    create_market_context_factory,
+)
 
 # =============================================================================
 # -----------------------------------------------------------------------------
 # =============================================================================
 
-def test_order_request_and_validation_result_value_objects_instantiation():
-    """Verify that the core risk value objects store immutable state profiles."""
-    request = OrderRequest(
-        symbol="EURUSD",
-        stop_loss_ticks=20.0,
-        risk_percentage=1.0,
-        confidence_factor=0.8,
+def test_sizer_calculates_exact_volume_for_short_execution(currency_converter) -> None:
+    """Ensures contract volumes and prices map correctly for sell short trades."""
+    sizer = PositionSizer(currency_converter=currency_converter)
+    spec = create_contract_specification_factory()
+    intent = ExposureIntent(
+        alpha_direction=Decimal('-1.0'),
+        stop_loss_ticks=500,
+        take_profit_ticks=1000,
+    )
+    snapshot = create_account_snapshot_factory(currency='USD')
+    context = create_market_context_factory()
+
+    order = sizer.create_order(
+        exposure_intent=intent,
+        risk_percent=Decimal('0.01'),
+        contract_specification=spec,
+        account_snapshot=snapshot,
+        market_context=context,
     )
 
-    assert request.symbol == "EURUSD"
-    assert request.stop_loss_ticks == 20.0
-    assert request.risk_percentage == 1.0
-    assert request.confidence_factor == 0.8
-
-    result = RiskValidationResult(
-        is_approved=True,
-        calculated_volume_lots=0.4,
-        rejection_reason="",
-    )
-
-    assert result.is_approved is True
-    assert result.calculated_volume_lots == 0.4
-    assert result.rejection_reason == ""
+    assert order.symbol == 'EURUSD'
+    assert order.quantity == Decimal('0.20')
+    assert order.side == OrderSide.SELL
+    assert order.stop_loss_price == Decimal('1.08990')
+    assert order.take_profit_price == Decimal('1.07490')
 
 # -----------------------------------------------------------------------------
 
-def test_position_sizer_calculates_nominal_lots_under_confidence_factors():
-    """Verify that the sizer dimensions lots based on risk and confidence scores."""
-    sizer = PositionSizer(instrument_registry=TEST_REGISTRY)
-    request = OrderRequest(
-        symbol="EURUSD",
-        stop_loss_ticks=20.0,
-        risk_percentage=1.0,
-        confidence_factor=0.8,
+def test_sizer_calculates_exact_volume_on_native_currency_match(
+    currency_converter,
+) -> None:
+    """Ensures contract volumes map directly when no conversion is required."""
+    sizer = PositionSizer(currency_converter=currency_converter)
+    spec = create_contract_specification_factory()
+    intent = ExposureIntent(
+        alpha_direction=Decimal('1.0'),
+        stop_loss_ticks=500,
+        take_profit_ticks=1000,
+    )
+    snapshot = create_account_snapshot_factory(currency='USD')
+    context = create_market_context_factory()
+
+    order = sizer.create_order(
+        exposure_intent=intent,
+        risk_percent=Decimal('0.01'),
+        contract_specification=spec,
+        account_snapshot=snapshot,
+        market_context=context,
     )
 
-    result = sizer.compute_volume(
-        account_equity=10000.0,
-        order_request=request,
-    )
-
-    assert result.is_approved is True
-    assert result.calculated_volume_lots == 0.4
-    assert result.rejection_reason == ""
+    assert order.symbol == 'EURUSD'
+    assert order.quantity == Decimal('0.20')
+    assert order.side == OrderSide.BUY
+    assert order.order_type == OrderType.MARKET
+    assert order.time_in_force == TimeInForce.DAY
+    assert order.stop_loss_price == Decimal('1.08010')
+    assert order.take_profit_price == Decimal('1.09510')
 
 # -----------------------------------------------------------------------------
 
-def test_position_sizer_applies_strict_floor_truncation_based_on_lot_step():
-    """Verify that the sizer strictly truncates lots down to lot_step granularity."""
-    sizer = PositionSizer(instrument_registry=TEST_REGISTRY)
-    request = OrderRequest(
-        symbol="EURUSD",
-        stop_loss_ticks=20.0,
-        risk_percentage=1.0,
-        confidence_factor=0.95,
+def test_sizer_calculates_volume_with_cross_currency_translation() -> None:
+    """Ensures cross currency conversions are integrated prior to sizing."""
+    converter = CurrencyConverter()
+    converter.update_rate(pair='EURUSD', rate=Decimal('1.0850'))
+    sizer = PositionSizer(currency_converter=converter)
+
+    spec = create_contract_specification_factory()
+    intent = ExposureIntent(
+        alpha_direction=Decimal('1.0'),
+        stop_loss_ticks=500,
+        take_profit_ticks=1000,
+    )
+    snapshot = create_account_snapshot_factory(currency='EUR')
+    context = create_market_context_factory()
+
+    order = sizer.create_order(
+        exposure_intent=intent,
+        risk_percent=Decimal('0.01'),
+        contract_specification=spec,
+        account_snapshot=snapshot,
+        market_context=context,
     )
 
-    result = sizer.compute_volume(
-        account_equity=10000.0,
-        order_request=request,
-    )
-
-    assert result.is_approved is True
-    assert result.calculated_volume_lots == 0.47
+    assert order.symbol == 'EURUSD'
+    assert order.quantity == Decimal('0.21')
+    assert order.side == OrderSide.BUY
+    assert order.order_type == OrderType.MARKET
+    assert order.time_in_force == TimeInForce.DAY
+    assert order.stop_loss_price == Decimal('1.08010')
+    assert order.take_profit_price == Decimal('1.09510')
 
 # -----------------------------------------------------------------------------
 
-def test_position_sizer_prevents_ieee754_flooring_degradation_anomalies():
-    """Verify that the sizer neutralizes float rounding micro-residues.
+def test_sizer_calculates_volume_with_tri_currency_cross_rates() -> None:
+    """Ensures raw asset pricing is translated to account currency layers."""
+    converter = CurrencyConverter()
+    converter.update_rate(pair='EURJPY', rate=Decimal('165.00'))
+    sizer = PositionSizer(currency_converter=converter)
 
-    With raw floats, calculating a target of 2.3 lots with a lot_step of 0.01
-    causes a binary floor degradation. The operation 2.3 // 0.01 yields 229.0
-    instead of 230.0 due to base-2 representation limits, dropping final volume.
-    """
-    sizer = PositionSizer(instrument_registry=TEST_REGISTRY)
-    request = OrderRequest(
-        symbol="EURUSD",
-        stop_loss_ticks=1.0,
-        risk_percentage=2.3,
-        confidence_factor=1.0,
+    spec = create_contract_specification_factory(
+        symbol='AUDJPY',
+        contract_multiplier=Decimal('10'),
+        contract_step=Decimal('1.0'),
+        min_contract_size=Decimal('1.0'),
+        tick_size=Decimal('0.01'),
+        quote_currency='JPY',
+    )
+    intent = ExposureIntent(
+        alpha_direction=Decimal('1.0'),
+        stop_loss_ticks=500,
+        take_profit_ticks=1000,
+    )
+    snapshot = create_account_snapshot_factory(currency='EUR')
+    context = create_market_context_factory(
+        mid_price=98.50,
+        bid=98.49,
+        ask=98.51,
     )
 
-    result = sizer.compute_volume(
-        account_equity=1000.0,
-        order_request=request,
+    order = sizer.create_order(
+        exposure_intent=intent,
+        risk_percent=Decimal('0.01'),
+        contract_specification=spec,
+        account_snapshot=snapshot,
+        market_context=context,
     )
 
-    assert result.is_approved is True
-    assert result.calculated_volume_lots == 2.3
+    assert order.symbol == 'AUDJPY'
+    assert order.quantity == Decimal('330.0')
+    assert order.side == OrderSide.BUY
+    assert order.stop_loss_price == Decimal('93.51')
+    assert order.take_profit_price == Decimal('108.51')
 
 # -----------------------------------------------------------------------------
 
-def test_position_sizer_rejects_orders_below_minimum_contract_size():
-    """Verify that the sizer flags a rejection when computed volume is below min_lot."""
-    sizer = PositionSizer(instrument_registry=TEST_REGISTRY)
-    request = OrderRequest(
-        symbol="EURUSD",
-        stop_loss_ticks=20.0,
-        risk_percentage=1.0,
-        confidence_factor=0.05,
+def test_sizer_raises_contract_volume_underflow_error(currency_converter) -> None:
+    """Ensures sub-minimum fractional calculations trigger domain alerts."""
+    sizer = PositionSizer(currency_converter=currency_converter)
+    spec = create_contract_specification_factory()
+    intent = ExposureIntent(
+        alpha_direction=Decimal('1.0'),
+        stop_loss_ticks=500,
+        take_profit_ticks=1000,
     )
-
-    result = sizer.compute_volume(
-        account_equity=10000.0,
-        order_request=request,
+    snapshot = create_account_snapshot_factory(
+        balance=Decimal('1000.00'),
+        currency='USD',
     )
+    context = create_market_context_factory()
 
-    assert result.is_approved is False
-    assert result.calculated_volume_lots == 0.0
-    assert "below minimum contract size" in result.rejection_reason.lower()
+    with pytest.raises(ContractVolumeUnderflowError):
+        sizer.create_order(
+            exposure_intent=intent,
+            risk_percent=Decimal('0.01'),
+            contract_specification=spec,
+            account_snapshot=snapshot,
+            market_context=context,
+        )
 
 # -----------------------------------------------------------------------------
 
-def test_position_sizer_rejects_exaggerated_confidence_coefficients():
-    """Verify that the sizer blocks confidence values amplifying nominal risk."""
-    sizer = PositionSizer(instrument_registry=TEST_REGISTRY)
-    request = OrderRequest(
-        symbol="EURUSD",
-        stop_loss_ticks=20.0,
-        risk_percentage=1.0,
-        confidence_factor=1.5,
+def test_sizer_raises_not_implemented_error_for_neutral_alpha(currency_converter) -> None:
+    """Ensures unhandled neutral or closure alpha signals throw exceptions."""
+    sizer = PositionSizer(currency_converter=currency_converter)
+    spec = create_contract_specification_factory()
+    intent = ExposureIntent(
+        alpha_direction=Decimal('0.0'),
+        stop_loss_ticks=500,
+        take_profit_ticks=1000,
     )
+    snapshot = create_account_snapshot_factory(currency='USD')
+    context = create_market_context_factory()
 
-    result = sizer.compute_volume(
-        account_equity=10000.0,
-        order_request=request,
-    )
-
-    assert result.is_approved is False
-    assert "cannot amplify maximum risk" in result.rejection_reason.lower()
-
-# -----------------------------------------------------------------------------
-
-def test_position_sizer_rejects_invalid_or_negative_stop_loss_distances():
-    """Verify that the sizer blocks negative stop loss ticks intervals."""
-    sizer = PositionSizer(instrument_registry=TEST_REGISTRY)
-    request = OrderRequest(
-        symbol="EURUSD",
-        stop_loss_ticks=-10.0,
-        risk_percentage=1.0,
-        confidence_factor=0.8,
-    )
-
-    result = sizer.compute_volume(
-        account_equity=10000.0,
-        order_request=request,
-    )
-
-    assert result.is_approved is False
-    assert "invalid risk or stop loss" in result.rejection_reason.lower()
-
-# -----------------------------------------------------------------------------
-
-def test_position_sizer_rejects_negative_risk_parameters_inputs():
-    """Verify that the sizer blocks negative risk percentage configurations."""
-    sizer = PositionSizer(instrument_registry=TEST_REGISTRY)
-    request = OrderRequest(
-        symbol="EURUSD",
-        stop_loss_ticks=20.0,
-        risk_percentage=-1.0,
-        confidence_factor=0.8,
-    )
-
-    result = sizer.compute_volume(
-        account_equity=10000.0,
-        order_request=request,
-    )
-
-    assert result.is_approved is False
-    assert "risk parameters cannot be negative" in result.rejection_reason.lower()
+    with pytest.raises(NotImplementedError):
+        sizer.create_order(
+            exposure_intent=intent,
+            risk_percent=Decimal('0.01'),
+            contract_specification=spec,
+            account_snapshot=snapshot,
+            market_context=context,
+        )
 
 # =============================================================================
 # -----------------------------------------------------------------------------

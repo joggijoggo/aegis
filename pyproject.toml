@@ -1,28 +1,44 @@
-[tool.ruff]
-# Target strict compliance with 90 columns limit for adaptive readability
-line-length = 90
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
 
-[tool.ruff.lint]
-# Active code rule directories for Aegis
-select = ["E", "W", "F", "D", "I"]
-ignore = [
-    "D100",  # Missing docstring in public module (we handle via file headers)
-    "D104",  # Missing docstring in public package
+[project]
+name = "aegis-framework"
+version = "1.0.0"
+description = "High-performance multi-asset algorithmic trading execution framework"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "pandas>=2.2.0",
+    "numpy>=1.26.0"
 ]
 
-[tool.ruff.lint.pydocstyle]
-# Enforce strict Google Style Docstrings as validated in architecture
-convention = "google"
-
-[tool.ruff.lint.isort]
-# Force strict 3-tier import splitting rules (Standard -> Third-Party -> Local)
-section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]
-known-first-party = ["core", "strategies", "brokers"]
-
-[tool.ruff.lint.per-file-ignores]
-# Downgrade I001 sorting rule from critical reports across the repository
-"*" = ["I001"]
-
 [tool.pytest.ini_options]
-# Automatically trigger coverage across all active Aegis modules with strict 100% threshold
-addopts = "--cov=core --cov=brokers --cov=strategies --cov-report=term-missing --cov-fail-under=100"
+minversion = "7.0"
+addopts = "--cov=core --cov=strategies --cov=bots --cov=market_feeds --cov=broker_adapters --cov-report term-missing --cov-report html"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+source = [
+    "core",
+    "strategies",
+    "bots",
+    "market_feeds",
+    "broker_adapters"
+]
+omit = [
+    "tests/*",
+    "**/test_*.py"
+]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:"
+]

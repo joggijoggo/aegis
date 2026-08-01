@@ -23,3 +23,6 @@ core/data/
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Work in progress drafts
+docs/plans

@@ -1,47 +1,61 @@
-"""Aegis Framework - Indicator Caching Unit Tests.
+"""Aegis Framework - Historical Buffer Unit Tests.
 
-Enforces TDD validation protocols onto the SQLite decentralized caching layers
-and SHA-256 parameter signature generation.
+Validates sliding window accumulation, memory limits, and type conversion.
 """
-from core.caching import IndicatorCacheEngine
+
+import pytest
+
+from core.caching import HistoricalBuffer
 
 # =============================================================================
 # -----------------------------------------------------------------------------
 # =============================================================================
 
-def test_sqlite_cache_write_and_read_lifecycle():
-    """Validates signature uniqueness and strict JSON serialization retrieval."""
-    # Use an in-memory SQLite database to isolate test I/O contexts cleanly
-    cache = IndicatorCacheEngine(db_path=':memory:')
+def test_historical_buffer_accumulates_values() -> None:
+    """Ensures input items append properly into the sequential store."""
+    buffer = HistoricalBuffer(max_size=5)
 
-    asset = 'EURUSD'
-    ind_name = 'ATR'
-    params = {'period': 14, 'multiplier': 2.0}
-    mock_data = [1.0800, 1.0810, 1.0820, 1.0815]
+    buffer.append(value=10.5)
+    buffer.append(value=11.2)
+    result = buffer.to_list()
 
-    # 1. Attempt retrieval on empty cache database
-    cached_payload = cache.get_vectors(
-        asset_pair=asset,
-        indicator_name=ind_name,
-        parameters=params
-    )
-    assert cached_payload is None
+    assert result == [10.5, 11.2]
 
-    # 2. Write calculated mock sequence into database cache ledger
-    cache.save_vectors(
-        asset_pair=asset,
-        indicator_name=ind_name,
-        parameters=params,
-        payload_data=mock_data
-    )
+# -----------------------------------------------------------------------------
 
-    # 3. Re-attempt retrieval to validate signature match hit
-    successful_payload = cache.get_vectors(
-        asset_pair=asset,
-        indicator_name=ind_name,
-        parameters=params
-    )
-    assert successful_payload == mock_data
+def test_historical_buffer_enforces_maximum_capacity() -> None:
+    """Ensures excess elements evict the oldest entry to maintain fixed size."""
+    buffer = HistoricalBuffer(max_size=3)
+
+    buffer.append(value=1.0)
+    buffer.append(value=2.0)
+    buffer.append(value=3.0)
+    buffer.append(value=4.0)
+    result = buffer.to_list()
+
+    assert result == [2.0, 3.0, 4.0]
+
+# -----------------------------------------------------------------------------
+
+def test_historical_buffer_returns_pure_float_list() -> None:
+    """Ensures the export mechanism yields a standard primitive float list."""
+    buffer = HistoricalBuffer(max_size=2)
+
+    buffer.append(value=1.0)
+    result = buffer.to_list()
+
+    assert isinstance(result, list)
+    assert all(isinstance(item, float) for item in result)
+
+# -----------------------------------------------------------------------------
+
+def test_historical_buffer_validation_on_initialization() -> None:
+    """Ensures non-positive size bounds trigger an immediate ValueError."""
+    with pytest.raises(ValueError, match="Buffer maximum size must be greater than zero"):
+        HistoricalBuffer(max_size=0)
+
+    with pytest.raises(ValueError, match="Buffer maximum size must be greater than zero"):
+        HistoricalBuffer(max_size=-5)
 
 # =============================================================================
 # -----------------------------------------------------------------------------
