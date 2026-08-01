@@ -90,6 +90,11 @@ class BacktraderBridge:
         """Flags the historical simulation loop as terminated."""
         self._is_completed = True
 
+        # Unblock the Backtrader thread if it is waiting for an advancement signal
+        # inside submit_event, preventing engine-teardown deadlocks in production.
+        if self._outbound_queue.empty():
+            self._outbound_queue.put(None)
+
 # -----------------------------------------------------------------------------
 
     @property

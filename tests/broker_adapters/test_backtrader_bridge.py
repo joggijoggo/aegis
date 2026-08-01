@@ -74,6 +74,29 @@ def test_backtrader_bridge_simulation_termination() -> None:
 
 # -----------------------------------------------------------------------------
 
+def test_backtrader_bridge_teardown_deadlock_reproduction() -> None:
+    """Verifies that the bridge natively prevents thread deadlocks when simulation completes."""
+    bridge = BacktraderBridge()
+
+    # Simulate an abrupt engine stoppage or completion before Backtrader submits its next tick
+    bridge.stop_simulation()
+
+    def simulate_backtrader_tick_submission() -> None:
+        bridge.submit_event(EventType.MARKET_TICK, 'isolated_tick_payload')
+
+    # Execute submission on a separate thread to isolate the potential blocking behavior
+    worker_thread = threading.Thread(target=simulate_backtrader_tick_submission, daemon=True)
+    worker_thread.start()
+
+    # Await worker termination with a strict micro-timeout
+    worker_thread.join(timeout=0.05)
+
+    # Right now, the un-guarded production code WILL FAIL this assertion
+    # because the thread remains stuck forever inside the submit_event queue lock.
+    assert not worker_thread.is_alive()
+
+# -----------------------------------------------------------------------------
+
 def test_backtrader_bridge_thread_synchronization() -> None:
     """Verifies thread-safe ping-pong blocking on market context boundaries."""
     bridge = BacktraderBridge()
