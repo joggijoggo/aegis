@@ -1,5 +1,7 @@
 """Aegis Framework - Unified Domain Model Facade."""
 
+from core.models.broker_event import BrokerEvent as BrokerEvent
+from core.models.enums import EventType as EventType
 from core.models.enums import OrderSide as OrderSide
 from core.models.enums import OrderStatus as OrderStatus
 from core.models.enums import OrderType as OrderType

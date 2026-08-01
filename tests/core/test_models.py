@@ -13,6 +13,8 @@ import pytest
 
 from core.models import (
     AccountSnapshot,
+    BrokerEvent,
+    EventType,
     Order,
     OrderReceipt,
     OrderSide,
@@ -51,6 +53,18 @@ def test_account_snapshot_types() -> None:
     assert isinstance(snapshot.balance, Decimal)
     assert isinstance(snapshot.equity, Decimal)
     assert isinstance(snapshot.available_margin, Decimal)
+
+# -----------------------------------------------------------------------------
+
+def test_broker_event_immutability() -> None:
+    """Verifies that the BrokerEvent dataclass enforces strict immutability."""
+    event = BrokerEvent(event_type=EventType.MARKET_TICK, payload='test_payload')
+
+    assert event.event_type == EventType.MARKET_TICK
+    assert event.payload == 'test_payload'
+
+    with pytest.raises(FrozenInstanceError):
+        event.payload = 'mutated_payload'  # type: ignore
 
 # -----------------------------------------------------------------------------
 
