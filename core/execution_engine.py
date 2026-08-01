@@ -10,6 +10,7 @@ from bots.base_bot import BaseBot
 from broker_adapters.base_broker_adapter import BaseBrokerAdapter
 from core.caching import HistoricalBuffer
 from core.contract_registry import ContractRegistry
+from core.models import BrokerEvent
 from core.position_sizer import PositionSizer
 from market_feeds.base_market_feed import BaseMarketFeed
 
@@ -46,6 +47,17 @@ class AegisExecutionEngine:
 
 # -----------------------------------------------------------------------------
 
+    def _process_broker_event(self, broker_event: BrokerEvent) -> None:
+        """Processes an unread asynchronous broker event notification.
+
+        Args:
+            broker_event: The incoming framework event update instance.
+        """
+        # TODO: update internal tracking ledger with execution notifications
+        pass
+
+# -----------------------------------------------------------------------------
+
     def run_execution_cycle(
         self,
         symbol: str,
@@ -65,6 +77,11 @@ class AegisExecutionEngine:
 
         try:
             while True:
+                # Flush and process asynchronous broker updates before market evaluation
+                while self._broker_adapter.has_pending_events():
+                    broker_event = self._broker_adapter.poll_event()
+                    self._process_broker_event(broker_event)
+
                 market_context = next(market_feed)
                 buffer.append(value=market_context.prices.mid_price)
 
@@ -93,7 +110,6 @@ class AegisExecutionEngine:
                 )
 
                 self._broker_adapter.submit_order(order)
-
         except StopIteration:
             pass
 

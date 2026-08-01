@@ -5,11 +5,20 @@ and contextual order generation workflows.
 """
 
 from decimal import Decimal
+from unittest.mock import MagicMock
 
 import pytest
 
+from core.contract_registry import ContractRegistry
 from core.execution_engine import AegisExecutionEngine
-from core.models import ExposureIntent, MarketContext, MarketPricePoint
+from core.models import (
+    BrokerEvent,
+    EventType,
+    ExposureIntent,
+    MarketContext,
+    MarketPricePoint,
+)
+from core.position_sizer import PositionSizer
 from tests.testutils import (
     BASE_TIMESTAMP,
     DEFAULT_SYMBOL,
@@ -21,6 +30,38 @@ from tests.testutils import (
 # =============================================================================
 # -----------------------------------------------------------------------------
 # =============================================================================
+
+def test_execution_engine_broker_event_flushing() -> None:
+    """Verifies that unread broker events are fully flushed before evaluating market feeds."""
+    mock_bot = MagicMock(spec=FakeBot)
+    mock_bot.warm_up_period = 10
+    mock_bot.evaluate.side_effect = StopIteration  # Force loop termination after first step
+
+    adapter = FakeBrokerAdapter()
+    # Inject a fake unread broker event notification into the queue
+    fake_event = BrokerEvent(event_type=EventType.ORDER_NOTIFICATION, payload={})
+    adapter._pending_events.put(fake_event)
+
+    mock_registry = MagicMock(spec=ContractRegistry)
+    mock_sizer = MagicMock(spec=PositionSizer)
+
+    engine = AegisExecutionEngine(
+        bot=mock_bot,
+        broker_adapter=adapter,
+        contract_registry=mock_registry,
+        position_sizer=mock_sizer,
+    )
+
+    engine._process_broker_event = MagicMock()
+    mock_feed = MagicMock(spec=FakeMarketFeed)
+
+    engine.run_execution_cycle(symbol='EURUSD', market_feed=mock_feed)
+
+    # Assert the async event flushing loop was triggered and emptied the queue
+    engine._process_broker_event.assert_called_once_with(fake_event)
+    assert adapter.has_pending_events() is False
+
+# -----------------------------------------------------------------------------
 
 def test_engine_cycle_executes_order_on_valid_intent(
     contract_registry,
