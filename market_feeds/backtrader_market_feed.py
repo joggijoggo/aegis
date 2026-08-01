@@ -50,6 +50,11 @@ class BacktraderMarketFeed(BaseMarketFeed):
         self._bridge.advance_time()
         raw_data = self._bridge.get_market_queue().get()
 
+        # Intercept the infrastructure shutdown signal to gracefully halt
+        # the execution loop before hitting the translation layer.
+        if raw_data is None:
+            raise StopIteration
+
         return self._translate_to_market_context(raw_data)
 
 # -----------------------------------------------------------------------------

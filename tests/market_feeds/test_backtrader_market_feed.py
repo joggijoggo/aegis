@@ -40,6 +40,30 @@ def test_backtrader_market_feed_nominal_iteration() -> None:
 
 # -----------------------------------------------------------------------------
 
+def test_backtrader_market_feed_poison_pill_deadlock_reproduction() -> None:
+    """Verifies that a None sentinel in the market queue immediately halts iteration before translation."""
+    mock_bridge = MagicMock(spec=BacktraderBridge)
+    mock_bridge.is_simulation_completed.return_value = False
+
+    mock_market_queue = MagicMock()
+    mock_market_queue.get.return_value = None  # Inject the triggering poison pill
+    mock_bridge.get_market_queue.return_value = mock_market_queue
+
+    feed = BacktraderMarketFeed(bridge=mock_bridge)
+
+    # Spy on the internal translator to ensure the guard blocks execution completely
+    feed._translate_to_market_context = MagicMock()
+
+    # Executing the un-guarded production code right now MUST FAIL this test
+    # either by reaching the real code or raising StopIteration prematurely.
+    with pytest.raises(StopIteration):
+        _ = next(feed)
+
+    mock_bridge.advance_time.assert_called_once()
+    feed._translate_to_market_context.assert_not_called()
+
+# -----------------------------------------------------------------------------
+
 def test_backtrader_market_feed_termination_guard() -> None:
     """Verifies that next raises StopIteration immediately upon simulation end."""
     mock_bridge = MagicMock(spec=BacktraderBridge)

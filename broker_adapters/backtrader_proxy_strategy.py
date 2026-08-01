@@ -64,6 +64,10 @@ class BacktraderProxyStrategy(bt.Strategy):
         """Intercepts the framework teardown hook and signals the bridge."""
         self._bridge.stop_simulation()
 
+        # Inject a poison pill into the market queue to instantly unblock
+        # the domain engine thread and prevent termination deadlocks.
+        self._bridge.get_market_queue().put(None)
+
 # =============================================================================
 # -----------------------------------------------------------------------------
 # =============================================================================
