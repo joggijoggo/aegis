@@ -1,13 +1,17 @@
 """Aegis Framework - Explicit Contractual Component Mocks."""
 
+from queue import Queue
+import uuid
+
 from bots.base_bot import BaseBot
 from broker_adapters.base_broker_adapter import BaseBrokerAdapter
 from core.models import (
     AccountSnapshot,
+    BrokerEvent,
+    EventType,
     ExposureIntent,
     MarketContext,
     Order,
-    OrderReceipt,
     OrderStatus,
 )
 from market_feeds.base_market_feed import BaseMarketFeed
@@ -62,6 +66,7 @@ class FakeBrokerAdapter(BaseBrokerAdapter):
         """Initializes the fake broker gateway with a static ledger snapshot."""
         self.submitted_orders: list[Order] = []
         self._account_snapshot = account_snapshot or create_account_snapshot_factory()
+        self._pending_events: Queue = Queue()
 
 # -----------------------------------------------------------------------------
 
@@ -71,15 +76,41 @@ class FakeBrokerAdapter(BaseBrokerAdapter):
 
 # -----------------------------------------------------------------------------
 
-    def submit_order(self, order: Order) -> OrderReceipt:
-        """Submits the execution order request to the fake venue ledger."""
+    def submit_order(self, order: Order) -> None:
+        """Submits the execution order request to the fake venue ledger.
+
+        Args:
+            order: The order request.
+        """
         self.submitted_orders.append(order)
-        return OrderReceipt(
-            broker_order_id=f'BRK-FAKE-{len(self.submitted_orders)}',
-            client_order_id=order.client_order_id,
-            status=OrderStatus.FILLED,
-            average_execution_price=order.price,
+
+        fake_receipt = {
+            'broker_order_id': f'BRK-FAKE-{uuid.uuid4()}',
+            'client_order_id': order.client_order_id,
+            'status': OrderStatus.FILLED,
+            'average_execution_price': order.price,
+        }
+        broker_event = BrokerEvent(
+            event_type=EventType.ORDER_NOTIFICATION,
+            payload=fake_receipt,
         )
+        self._pending_events.put(broker_event)
+
+# -----------------------------------------------------------------------------
+
+    def has_pending_events(self) -> bool:
+        """Indicates whether unread broker events are available."""
+        return not self._pending_events.empty()
+
+# -----------------------------------------------------------------------------
+
+    def poll_event(self) -> BrokerEvent:
+        """Returns the next pending broker event.
+
+        Returns:
+            The retrieved broker event.
+        """
+        return self._pending_events.get()
 
 # =============================================================================
 # -----------------------------------------------------------------------------

@@ -10,16 +10,16 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+from broker_adapters.base_broker_adapter import BaseBrokerAdapter
 from core.models import (
     AccountSnapshot,
+    BrokerEvent,
+    EventType,
     Order,
-    OrderReceipt,
     OrderSide,
-    OrderStatus,
     OrderType,
     TimeInForce,
 )
-from broker_adapters.base_broker_adapter import BaseBrokerAdapter
 
 # =============================================================================
 # -----------------------------------------------------------------------------
@@ -39,37 +39,45 @@ def test_base_broker_adapter_nominal_implementation() -> None:
         def get_account_snapshot(self) -> AccountSnapshot:
             return AccountSnapshot(
                 currency='EURUSD',
-                balance=Decimal("10000.00"),
-                equity=Decimal("10000.00"),
-                available_margin=Decimal("10000.00"),
+                balance=Decimal('10000.00'),
+                equity=Decimal('10000.00'),
+                available_margin=Decimal('10000.00'),
             )
 
-        def submit_order(self, order: Order) -> OrderReceipt:
-            return OrderReceipt(
-                broker_order_id="BRK-123",
-                client_order_id=order.client_order_id,
-                status=OrderStatus.FILLED,
-                average_execution_price=Decimal("1.0850"),
-                reject_reason=None,
+        def submit_order(self, order: Order) -> None:
+            pass
+
+        def has_pending_events(self) -> bool:
+            return True
+
+        def poll_event(self) -> BrokerEvent:
+            return BrokerEvent(
+                event_type=EventType.ORDER_NOTIFICATION,
+                payload={'status': 'FILLED'},
             )
 
     adapter = DummyBrokerAdapter()
     snapshot = adapter.get_account_snapshot()
 
     order = Order(
-        client_order_id="ORD-001",
-        timestamp=datetime(2026, 7, 30, 12, 0, tzinfo=ZoneInfo("UTC")),
-        symbol="EURUSD",
+        client_order_id='ORD-001',
+        timestamp=datetime(2026, 7, 30, 12, 0, tzinfo=ZoneInfo('UTC')),
+        symbol='EURUSD',
         side=OrderSide.BUY,
         order_type=OrderType.MARKET,
         time_in_force=TimeInForce.DAY,
-        quantity=Decimal("100000"),
+        quantity=Decimal('100000'),
     )
-    receipt = adapter.submit_order(order)
+
+    adapter.submit_order(order)
+    has_pending_events = adapter.has_pending_events()
+    event = adapter.poll_event()
 
     assert isinstance(snapshot, AccountSnapshot)
-    assert isinstance(receipt, OrderReceipt)
+    assert has_pending_events is True
+    assert isinstance(event, BrokerEvent)
     assert isinstance(adapter, BaseBrokerAdapter)
+
 
 # =============================================================================
 # -----------------------------------------------------------------------------

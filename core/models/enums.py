@@ -10,6 +10,14 @@ from enum import Enum
 # -----------------------------------------------------------------------------
 # =============================================================================
 
+class EventType(Enum):
+    """Infrastructure event categories."""
+    MARKET_TICK = 'MARKET_TICK'
+    ORDER_NOTIFICATION = 'ORDER_NOTIFICATION'
+    TRADE_NOTIFICATION = 'TRADE_NOTIFICATION'
+
+# -----------------------------------------------------------------------------
+
 class OrderSide(Enum):
     """Enforces execution direction flags across external gateway adapters."""
     BUY = 'BUY'
