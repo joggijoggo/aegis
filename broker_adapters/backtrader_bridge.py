@@ -4,6 +4,7 @@ Orchestrates thread-safe execution synchronization between the core domain engin
 """
 
 from queue import Queue
+import threading
 from typing import Any
 
 import backtrader as bt
@@ -38,7 +39,7 @@ class BacktraderBridge:
 
     def __init__(self) -> None:
         """Initializes the bridge synchronization queues and tracking states."""
-        self._outbound_queue: Queue = Queue(maxsize=1)
+        self._advance_event = threading.Event()
         self._market_queue: Queue = Queue()
         self._broker_queue: Queue = Queue()
         self._strategy = None
@@ -48,7 +49,7 @@ class BacktraderBridge:
 
     def advance_time(self) -> None:
         """Signals the background execution loop to progress by a single increment."""
-        self._outbound_queue.put(None)
+        self._advance_event.set()
 
 # -----------------------------------------------------------------------------
 
@@ -89,11 +90,7 @@ class BacktraderBridge:
     def stop_simulation(self) -> None:
         """Flags the historical simulation loop as terminated."""
         self._is_completed = True
-
-        # Unblock the Backtrader thread if it is waiting for an advancement signal
-        # inside submit_event, preventing engine-teardown deadlocks in production.
-        if self._outbound_queue.empty():
-            self._outbound_queue.put(None)
+        self._advance_event.set()
 
 # -----------------------------------------------------------------------------
 
@@ -121,9 +118,13 @@ class BacktraderBridge:
             event_type: The core classification used to route the update.
             data: The raw infrastructure object under evaluation.
         """
+        if self._is_completed:
+            return
+
         if event_type == EventType.MARKET_TICK:
+            self._advance_event.clear()
             self._market_queue.put(data)
-            self._outbound_queue.get()
+            self._advance_event.wait()
         else:
             self._broker_queue.put((event_type, data))
 

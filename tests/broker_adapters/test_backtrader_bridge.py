@@ -64,6 +64,37 @@ def test_backtrader_bridge_broker_event_routing() -> None:
 
 # -----------------------------------------------------------------------------
 
+def test_backtrader_bridge_race_condition_teardown() -> None:
+    """Verifies that the queue-based implementation deadlocks when stop_simulation
+    is called with a non-empty queue."""
+    bridge = BacktraderBridge()
+
+    # 1. Simulate an engine advancement that puts a token into the outbound queue
+    bridge.advance_time()
+
+    # 2. The engine decides to stop abruptly. Under the old queue logic:
+    # stop_simulation checks if _outbound_queue.empty() -> It is NOT empty (contains the advance token).
+    # Therefore, it skips putting the None poison pill!
+    bridge.stop_simulation()
+
+    def simulate_backtrader_late_arrival() -> None:
+        # 3. Backtrader arrives late, processes its tick, and consumes the nominal advance token
+        bridge.submit_event(EventType.MARKET_TICK, 'belated_tick')
+        # 4. It loops and sends a subsequent event, or attempts to block.
+        # Under queue logic, it falls into _outbound_queue.get() which is now empty, causing a permanent deadlock.
+        bridge.submit_event(EventType.MARKET_TICK, 'deadlock_tick')
+
+    worker_thread = threading.Thread(target=simulate_backtrader_late_arrival, daemon=True)
+    worker_thread.start()
+
+    worker_thread.join(timeout=0.05)
+
+    # This assertion WILL FAIL (True is not False) with the current queue-based code
+    # because the worker thread remains frozen inside the second submit_event.
+    assert not worker_thread.is_alive()
+
+# -----------------------------------------------------------------------------
+
 def test_backtrader_bridge_simulation_termination() -> None:
     """Verifies completion state flags switch successfully."""
     bridge = BacktraderBridge()
