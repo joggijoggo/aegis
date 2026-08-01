@@ -11,8 +11,8 @@ from abc import (
 
 from core.models import (
     AccountSnapshot,
+    BrokerEvent,
     Order,
-    OrderReceipt,
 )
 
 # =============================================================================
@@ -39,17 +39,29 @@ class BaseBrokerAdapter(ABC):
 # -----------------------------------------------------------------------------
 
     @abstractmethod
-    def submit_order(self, order: Order) -> OrderReceipt:
-        """Submits the order to the broker.
+    def submit_order(self, order: Order) -> None:
+        """Submits the order to the broker..
 
         Args:
-            order: The execution order details.
+            order: The order request.
+        """
+        pass
+
+# -----------------------------------------------------------------------------
+
+    @abstractmethod
+    def has_pending_events(self) -> bool:
+        """Indicates whether unread broker events are available."""
+        pass
+
+# -----------------------------------------------------------------------------
+
+    @abstractmethod
+    def poll_event(self) -> BrokerEvent:
+        """Returns the next pending broker event.
 
         Returns:
-            The execution order receipt.
-
-        Raises:
-            BrokerConnectionError: Broker connection failure.
+            The retrieved broker event.
         """
         pass
 
