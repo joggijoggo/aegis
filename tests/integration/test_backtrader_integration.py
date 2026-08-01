@@ -14,6 +14,7 @@ from broker_adapters.backtrader_broker_adapter import BacktraderBrokerAdapter
 from broker_adapters.backtrader_proxy_strategy import BacktraderProxyStrategy
 from core.contract_registry import ContractRegistry
 from core.execution_engine import AegisExecutionEngine
+from core.models import ExposureIntent
 from core.position_sizer import PositionSizer
 from market_feeds.backtrader_market_feed import BacktraderMarketFeed
 from tests.testutils.mocks import FakeBot
@@ -71,7 +72,9 @@ def test_backtrader_integration_passive_flow() -> None:
     memory_feed = PureMemoryDataFeed()
     cerebro.adddata(memory_feed, name='EURUSD')
 
-    passive_bot = FakeBot(warm_up=0)
+    # Allocate the passive bot with an explicit flat intent and a valid warm-up period
+    flat_intent = ExposureIntent(alpha_direction=None, stop_loss_ticks=0.0, take_profit_ticks=0.0)
+    passive_bot = FakeBot(exposure_intent=flat_intent, warm_up=0)
     broker_adapter = BacktraderBrokerAdapter(bridge=bridge)
     contract_registry = MagicMock(spec=ContractRegistry)
     position_sizer = MagicMock(spec=PositionSizer)
