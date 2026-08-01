@@ -6,7 +6,10 @@ Provides the market feed adapter that extracts and translates synchronized histo
 from typing import Any
 
 from broker_adapters.backtrader_bridge import BacktraderBridge
-from core.models import MarketContext
+from core.models import (
+    MarketContext,
+    MarketPricePoint,
+)
 from market_feeds.base_market_feed import BaseMarketFeed
 
 # =============================================================================
@@ -32,19 +35,6 @@ class BacktraderMarketFeed(BaseMarketFeed):
 
 # -----------------------------------------------------------------------------
 
-    def _translate_to_market_context(self, raw_data: Any) -> MarketContext:
-        """Translates raw infrastructure price data into domain structures.
-
-        Args:
-            raw_data: The raw infrastructure data update instance.
-
-        Returns:
-            The translated market context snapshot.
-        """
-        pass
-
-# -----------------------------------------------------------------------------
-
     def __next__(self) -> MarketContext:
         """Returns the next sequential market state context.
 
@@ -61,6 +51,40 @@ class BacktraderMarketFeed(BaseMarketFeed):
         raw_data = self._bridge.get_market_queue().get()
 
         return self._translate_to_market_context(raw_data)
+
+# -----------------------------------------------------------------------------
+
+    def _translate_to_market_context(self, raw_data: Any) -> MarketContext:
+        """Translates raw infrastructure price data into domain structures.
+
+        Args:
+            raw_data: The raw infrastructure data update instance.
+
+        Returns:
+            The translated market context snapshot.
+        """
+        current_time = raw_data.datetime.datetime(0)
+        mid = float(raw_data.close[0])
+        bid = mid # TODO: implement friction?
+        ask = mid # TODO: implement friction?
+
+        # Microstructural estimation of local volatility and spreads
+        current_atr = 0.0 # TODO: compute or delete?
+        is_night_tariff = False # TODO: implement friction?
+
+        price_point = MarketPricePoint(
+            timestamp=current_time,
+            mid_price=mid,
+            bid=bid,
+            ask=ask,
+            current_atr=current_atr,
+            is_night_tariff=is_night_tariff,
+        )
+
+        return MarketContext(
+            prices=price_point,
+            volume=float(raw_data.volume[0]),
+        )
 
 # =============================================================================
 # -----------------------------------------------------------------------------

@@ -3,12 +3,16 @@
 Validates the iteration lifecycles and nominal termination guards of the feed adapter.
 """
 
+from datetime import datetime
 from unittest.mock import MagicMock
 
 import pytest
 
 from broker_adapters.backtrader_bridge import BacktraderBridge
-from core.models import MarketContext
+from core.models import (
+    MarketContext,
+    MarketPricePoint,
+)
 from market_feeds.backtrader_market_feed import BacktraderMarketFeed
 
 # =============================================================================
@@ -27,9 +31,7 @@ def test_backtrader_market_feed_nominal_iteration() -> None:
     feed = BacktraderMarketFeed(bridge=mock_bridge)
     mock_context = MagicMock(spec=MarketContext)
 
-    # Mock the internal translation stub for this sub-milestone
     feed._translate_to_market_context = MagicMock(return_value=mock_context)
-
     context = next(feed)
 
     assert context is mock_context
@@ -49,6 +51,31 @@ def test_backtrader_market_feed_termination_guard() -> None:
         _ = next(feed)
 
     mock_bridge.advance_time.assert_not_called()
+
+# -----------------------------------------------------------------------------
+
+def test_backtrader_market_feed_translation_logic() -> None:
+    """Verifies the mathematical extraction and parsing of Backtrader fields."""
+    mock_bridge = MagicMock(spec=BacktraderBridge)
+    feed = BacktraderMarketFeed(bridge=mock_bridge)
+
+    fake_time = datetime(2026, 8, 1, 12, 0)
+    mock_raw_data = MagicMock()
+    mock_raw_data.datetime.datetime.return_value = fake_time
+    mock_raw_data.close = [1.1200]
+    mock_raw_data.volume = [5000.0]
+
+    context = feed._translate_to_market_context(mock_raw_data)
+
+    assert isinstance(context, MarketContext)
+    assert isinstance(context.prices, MarketPricePoint)
+    assert context.prices.timestamp == fake_time
+    assert context.prices.mid_price == 1.1200
+    assert context.prices.bid == 1.1200
+    assert context.prices.ask == 1.1200
+    assert context.prices.current_atr == 0.0
+    assert context.prices.is_night_tariff is False
+    assert context.volume == 5000.0
 
 # =============================================================================
 # -----------------------------------------------------------------------------
