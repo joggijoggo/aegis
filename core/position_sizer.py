@@ -132,7 +132,7 @@ class PositionSizer:
             symbol=contract_specification.symbol,
             side=side,
             order_type=OrderType.MARKET,
-            time_in_force=TimeInForce.DAY,
+            time_in_force=TimeInForce.GTC,
             quantity=quantized_quantity,
             price=None,
             stop_loss_price=stop_loss_price,
