@@ -17,6 +17,7 @@ from core.models import (
     EventType,
     Order,
     OrderSide,
+    OrderStatus,
     OrderType,
     TimeInForce,
 )
@@ -58,6 +59,30 @@ class BacktraderBrokerAdapter(BaseBrokerAdapter):
         """
         self._bridge = bridge
         self._broker_queue = bridge.get_broker_queue()
+
+# -----------------------------------------------------------------------------
+
+    def _parse_order_status(self, raw_status: int) -> OrderStatus:
+        """Maps Backtrader infrastructure order statuses to core domain enums.
+
+        Args:
+            raw_status: Integer representation of Backtrader order states.
+
+        Returns:
+            The corresponding core OrderStatus enumeration value.
+        """
+        mapping = {
+            bt.Order.Created: OrderStatus.PENDING,
+            bt.Order.Submitted: OrderStatus.PENDING,
+            bt.Order.Accepted: OrderStatus.PENDING,
+            bt.Order.Partial: OrderStatus.PARTIALLY_FILLED,
+            bt.Order.Completed: OrderStatus.FILLED,
+            bt.Order.Canceled: OrderStatus.CANCELED,
+            bt.Order.Expired: OrderStatus.CANCELED,
+            bt.Order.Margin: OrderStatus.REJECTED,
+            bt.Order.Rejected: OrderStatus.REJECTED,
+        }
+        return mapping.get(raw_status, OrderStatus.REJECTED)
 
 # -----------------------------------------------------------------------------
 
@@ -161,15 +186,52 @@ class BacktraderBrokerAdapter(BaseBrokerAdapter):
 
         Args:
             event_type: The core classification used to route the update.
-            raw_data: The raw infrastructure notification instance.
+            raw_data: The raw infrastructure notification instance (bt.Order or bt.Trade).
 
         Returns:
-            The translated broker event record.
+            The translated broker event record containing validated decimal payloads.
         """
-        # Microstructural translation wrapper placeholder
+        payload: dict[str, Any] = {}
+
+        if event_type == EventType.ORDER_NOTIFICATION:
+            raw_order: bt.Order = raw_data
+
+            # Extract and clean client_order_id from trailing bracket suffixes
+            client_id = getattr(raw_order, 'client_order_id', '') or ''
+            if client_id.endswith('-SL') or client_id.endswith('-TP'):
+                client_id = client_id[:-3]
+
+            status = self._parse_order_status(raw_order.status)
+
+            # Tight type mutation pipeline: float -> str -> Decimal
+            executed_size = Decimal(str(float(raw_order.executed.size)))
+            executed_price = Decimal(str(float(raw_order.executed.price)))
+
+            payload = {
+                'broker_order_id': str(raw_order.ref),
+                'client_order_id': client_id,
+                'executed_quantity': executed_size,
+                'execution_price': executed_price,
+                'status': status,
+            }
+        elif event_type == EventType.TRADE_NOTIFICATION:
+            raw_trade: bt.Trade = raw_data
+
+            # Tight type mutation pipeline: float -> str -> Decimal
+            realized_pnl = Decimal(str(float(raw_trade.pnl)))
+            commission = Decimal(str(float(raw_trade.commission)))
+
+            payload = {
+                'broker_trade_id': str(raw_trade.ref),
+                'symbol': str(raw_trade.data._name),
+                'realized_pnl': realized_pnl,
+                'commission': commission,
+                'is_open': bool(raw_trade.isopen),
+            }
+
         return BrokerEvent(
             event_type=event_type,
-            payload=raw_data,
+            payload=payload,
         )
 
 # -----------------------------------------------------------------------------
