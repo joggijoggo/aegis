@@ -51,74 +51,23 @@ def test_backtrader_broker_adapter_account_snapshot() -> None:
 
 # -----------------------------------------------------------------------------
 
-def test_backtrader_broker_adapter_asymmetric_bracket_transmission() -> None:
-    """Verifies that an asymmetric bracket with only Stop Loss forces transmit to True on the child."""
+def test_backtrader_broker_adapter_asset_not_found_guard() -> None:
+    """Verifies that an AssetSymbolNotFoundError is raised if the asset is missing from Cerebro."""
     mock_bridge = MagicMock(spec=BacktraderBridge)
     mock_strategy = MagicMock()
-    mock_parent_order = MagicMock()
-    mock_strategy.buy.return_value = mock_parent_order
-
-    mock_data = MagicMock(spec=bt.feed.DataBase)
-    mock_data._name = 'EURUSD'
-    mock_strategy.datas = [mock_data]
+    mock_strategy.datas = []
     mock_bridge.strategy = mock_strategy
 
     adapter = BacktraderBrokerAdapter(bridge=mock_bridge)
 
     mock_order = MagicMock(spec=Order)
     mock_order.quantity = Decimal('1.0')
-    mock_order.symbol = 'EURUSD'
-    mock_order.side = OrderSide.BUY
+    mock_order.symbol = 'UNKNOWN'
     mock_order.order_type = OrderType.MARKET
     mock_order.time_in_force = TimeInForce.GTC
-    mock_order.stop_loss_price = Decimal('1.1200')
-    mock_order.take_profit_price = None
-    mock_order.client_order_id = 'AEGIS-ASYM'
 
-    adapter.submit_order(mock_order)
-
-    mock_strategy.buy.assert_called_once_with(
-        data=mock_data, size=1.0, exectype=bt.Order.Market, valid=None, transmit=False, client_order_id='AEGIS-ASYM'
-    )
-    mock_strategy.sell.assert_called_once_with(
-        data=mock_data, size=1.0, exectype=bt.Order.Stop, price=1.1200, valid=None, parent=mock_parent_order, transmit=True, client_order_id='AEGIS-ASYM-SL'
-    )
-# -----------------------------------------------------------------------------
-
-def test_backtrader_broker_adapter_asymmetric_bracket_missing_take_profit() -> None:
-    """Verifies that a bracket missing a Take Profit forces transmit to True on the Stop Loss child."""
-    mock_bridge = MagicMock(spec=BacktraderBridge)
-    mock_strategy = MagicMock()
-    mock_parent_order = MagicMock()
-    mock_strategy.buy.return_value = mock_parent_order
-
-    mock_data = MagicMock(spec=bt.feed.DataBase)
-    mock_data._name = 'EURUSD'
-    mock_strategy.datas = [mock_data]
-    mock_bridge.strategy = mock_strategy
-
-    adapter = BacktraderBrokerAdapter(bridge=mock_bridge)
-
-    mock_order = MagicMock(spec=Order)
-    mock_order.quantity = Decimal('1.0')
-    mock_order.symbol = 'EURUSD'
-    mock_order.side = OrderSide.BUY
-    mock_order.order_type = OrderType.MARKET
-    mock_order.time_in_force = TimeInForce.GTC
-    mock_order.stop_loss_price = Decimal('1.1200')
-    mock_order.take_profit_price = None  # Missing Take Profit
-    mock_order.client_order_id = 'AEGIS-MISSING-TP'
-
-    adapter.submit_order(mock_order)
-
-    # Parent must hold transmission to let the child stack
-    mock_strategy.buy.assert_called_once_with(
-        data=mock_data, size=1.0, exectype=bt.Order.Market, valid=None, transmit=False, client_order_id='AEGIS-MISSING-TP'
-    )
-    # Child Stop Loss is the last link and must release the atomic block
-    mock_strategy.sell.assert_called_once_with(
-        data=mock_data, size=1.0, exectype=bt.Order.Stop, price=1.1200, valid=None, parent=mock_parent_order, transmit=True, client_order_id='AEGIS-MISSING-TP-SL'
-    )
+    with pytest.raises(AssetSymbolNotFoundError, match="Requested asset symbol 'UNKNOWN' is not available"):
+        adapter.submit_order(mock_order)
 
 # -----------------------------------------------------------------------------
 
@@ -159,23 +108,75 @@ def test_backtrader_broker_adapter_asymmetric_bracket_missing_stop_loss() -> Non
 
 # -----------------------------------------------------------------------------
 
-def test_backtrader_broker_adapter_asset_not_found_guard() -> None:
-    """Verifies that an AssetSymbolNotFoundError is raised if the asset is missing from Cerebro."""
+def test_backtrader_broker_adapter_asymmetric_bracket_missing_take_profit() -> None:
+    """Verifies that a bracket missing a Take Profit forces transmit to True on the Stop Loss child."""
     mock_bridge = MagicMock(spec=BacktraderBridge)
     mock_strategy = MagicMock()
-    mock_strategy.datas = []
+    mock_parent_order = MagicMock()
+    mock_strategy.buy.return_value = mock_parent_order
+
+    mock_data = MagicMock(spec=bt.feed.DataBase)
+    mock_data._name = 'EURUSD'
+    mock_strategy.datas = [mock_data]
     mock_bridge.strategy = mock_strategy
 
     adapter = BacktraderBrokerAdapter(bridge=mock_bridge)
 
     mock_order = MagicMock(spec=Order)
     mock_order.quantity = Decimal('1.0')
-    mock_order.symbol = 'UNKNOWN'
+    mock_order.symbol = 'EURUSD'
+    mock_order.side = OrderSide.BUY
     mock_order.order_type = OrderType.MARKET
     mock_order.time_in_force = TimeInForce.GTC
+    mock_order.stop_loss_price = Decimal('1.1200')
+    mock_order.take_profit_price = None  # Missing Take Profit
+    mock_order.client_order_id = 'AEGIS-MISSING-TP'
 
-    with pytest.raises(AssetSymbolNotFoundError, match="Requested asset symbol 'UNKNOWN' is not available"):
-        adapter.submit_order(mock_order)
+    adapter.submit_order(mock_order)
+
+    # Parent must hold transmission to let the child stack
+    mock_strategy.buy.assert_called_once_with(
+        data=mock_data, size=1.0, exectype=bt.Order.Market, valid=None, transmit=False, client_order_id='AEGIS-MISSING-TP'
+    )
+    # Child Stop Loss is the last link and must release the atomic block
+    mock_strategy.sell.assert_called_once_with(
+        data=mock_data, size=1.0, exectype=bt.Order.Stop, price=1.1200, valid=None, parent=mock_parent_order, transmit=True, client_order_id='AEGIS-MISSING-TP-SL'
+    )
+
+# -----------------------------------------------------------------------------
+
+def test_backtrader_broker_adapter_asymmetric_bracket_transmission() -> None:
+    """Verifies that an asymmetric bracket with only Stop Loss forces transmit to True on the child."""
+    mock_bridge = MagicMock(spec=BacktraderBridge)
+    mock_strategy = MagicMock()
+    mock_parent_order = MagicMock()
+    mock_strategy.buy.return_value = mock_parent_order
+
+    mock_data = MagicMock(spec=bt.feed.DataBase)
+    mock_data._name = 'EURUSD'
+    mock_strategy.datas = [mock_data]
+    mock_bridge.strategy = mock_strategy
+
+    adapter = BacktraderBrokerAdapter(bridge=mock_bridge)
+
+    mock_order = MagicMock(spec=Order)
+    mock_order.quantity = Decimal('1.0')
+    mock_order.symbol = 'EURUSD'
+    mock_order.side = OrderSide.BUY
+    mock_order.order_type = OrderType.MARKET
+    mock_order.time_in_force = TimeInForce.GTC
+    mock_order.stop_loss_price = Decimal('1.1200')
+    mock_order.take_profit_price = None
+    mock_order.client_order_id = 'AEGIS-ASYM'
+
+    adapter.submit_order(mock_order)
+
+    mock_strategy.buy.assert_called_once_with(
+        data=mock_data, size=1.0, exectype=bt.Order.Market, valid=None, transmit=False, client_order_id='AEGIS-ASYM'
+    )
+    mock_strategy.sell.assert_called_once_with(
+        data=mock_data, size=1.0, exectype=bt.Order.Stop, price=1.1200, valid=None, parent=mock_parent_order, transmit=True, client_order_id='AEGIS-ASYM-SL'
+    )
 
 # -----------------------------------------------------------------------------
 
