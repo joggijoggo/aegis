@@ -25,6 +25,8 @@ from core.models import (
     OrderSide,
     OrderStatus,
     OrderType,
+    PositionLedger,
+    PositionSide,
     TimeInForce,
 )
 
@@ -362,6 +364,91 @@ def test_backtrader_broker_adapter_order_clearing_parsing() -> None:
     assert event_rejected.payload['status'] == OrderStatus.REJECTED
     assert event_rejected.payload['executed_quantity'] == Decimal("0.0")
     assert event_rejected.payload['execution_price'] == Decimal("0.0")
+
+# -----------------------------------------------------------------------------
+
+def test_backtrader_broker_adapter_position_ledger_parsing() -> None:
+    """Verifies that get_position_ledger correctly decodes and converts backtrader positions."""
+    class DummyDataFeed(bt.feed.DataBase):
+        """Minimalistic concrete data feed for structural alignment."""
+        # Standard Backtrader parameters infrastructure declaration
+        params = (('name', ''),)
+
+        def __init__(self, *args, **kwargs) -> None:
+            super().__init__(*args, **kwargs)
+            # Backtrader assigns params values to self.p or self.params automatically
+            self._name = self.p.name
+
+    class DummyStrategy(bt.Strategy):
+        """Minimalistic concrete strategy container mapping active positions."""
+        def __init__(self) -> None:
+            super().__init__()
+
+    # 1. Setup Cerebro to instantiate an authentic strategy legally
+    cerebro = bt.Cerebro()
+    cerebro.addstrategy(DummyStrategy)
+
+    # 2. Inject raw named data feeds into Cerebro
+    data_eurusd = DummyDataFeed(name="EURUSD")
+    data_gbpusd = DummyDataFeed(name="GBPUSD")
+    data_flat = DummyDataFeed(name="USDJPY")
+
+    cerebro.adddata(data_eurusd)
+    cerebro.adddata(data_gbpusd)
+    cerebro.adddata(data_flat)
+
+    # Run cerebro minimalistically to extract the fully initialized strategy object
+    strategies = cerebro.run()
+    strategy = strategies[0]
+
+    # 3. Setup the framework synchronization bridge and adapter
+    bridge = BacktraderBridge()
+    adapter = BacktraderBrokerAdapter(bridge=bridge)
+
+    # 4. Forge real Backtrader position instances
+    position_long = bt.Position()
+    position_long.size = 100000
+    position_long.price = 1.08500
+
+    position_short = bt.Position()
+    position_short.size = -50000
+    position_short.price = 1.27400
+
+    position_flat = bt.Position()
+    position_flat.size = 0
+    position_flat.price = 0.0
+
+    # 5. Bypass the strategy read-only property barrier by writing directly
+    #    into Backtrader's underlying broker position mapping container.
+    strategy.broker.positions = {
+        data_eurusd: position_long,
+        data_gbpusd: position_short,
+        data_flat: position_flat,
+    }
+    bridge.bind_strategy(strategy)
+
+    # 6. Execute the ledger parsing extraction
+    ledger = adapter.get_position_ledger()
+
+    # 7. Assertions verifying mathematical and directional translations
+    assert isinstance(ledger, PositionLedger)
+    assert len(ledger.records) == 2  # USDJPY (flat) must be filtered out natively
+
+    # Validate LONG position extraction under prefix constraints
+    position_aegis_long = ledger.records["EURUSD"]
+    assert position_aegis_long.symbol == "EURUSD"
+    assert position_aegis_long.ticket_id == "BACKTRADER-EURUSD"
+    assert position_aegis_long.side == PositionSide.LONG
+    assert position_aegis_long.quantity == Decimal("100000")
+    assert position_aegis_long.entry_price == Decimal("1.085")
+
+    # Validate SHORT position extraction under absolute volume constraints
+    position_aegis_short = ledger.records["GBPUSD"]
+    assert position_aegis_short.symbol == "GBPUSD"
+    assert position_aegis_short.ticket_id == "BACKTRADER-GBPUSD"
+    assert position_aegis_short.side == PositionSide.SHORT
+    assert position_aegis_short.quantity == Decimal("50000")  # Magnitude is absolute
+    assert position_aegis_short.entry_price == Decimal("1.274")
 
 # -----------------------------------------------------------------------------
 

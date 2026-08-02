@@ -19,7 +19,9 @@ from core.models import (
     OrderSide,
     OrderStatus,
     OrderType,
+    Position,
     PositionLedger,
+    PositionSide,
     TimeInForce,
 )
 
@@ -265,9 +267,52 @@ class BacktraderBrokerAdapter(BaseBrokerAdapter):
         Returns:
             PositionLedger instance containing open positions indexed by ticket_id.
         """
-        raise NotImplementedError(
-            "Position ledger extraction is not yet implemented for the Backtrader adapter."
-        )
+        strategy = self._bridge.strategy
+        active_records: dict[str, Position] = {}
+
+        # ---------------------------------------------------------------------
+        # MICROSTRUCTURAL DESIGN NOTE:
+        # Theoretically, Backtrader's native broker ('bt.brokers.BackBroker')
+        # only supports strict 'Netting' semantics. It executes algebraic fusion
+        # on trade sizes per data feed, making the simultaneous coexistence of
+        # separate LONG and SHORT positions on the exact same feed impossible.
+        #
+        # POTENTIAL WORKAROUNDS FOR HEDGING STRATEGIES:
+        # 1. Data Feed Duplication: Inject the same market data multiple times
+        #    into Cerebro under unique names (e.g., 'EURUSD_1', 'EURUSD_2').
+        #    Backtrader treats them as distinct assets, allocating isolated
+        #    'bt.Position' states to each, which this ledger natively captures
+        #    as unique 'ticket_id' keys matching the feed names.
+        # 2. Custom Broker Extension: Override the core broker by subclassing
+        #    'bt.BrokerBase' to substitute the data-mapped dictionary with an
+        #    open ticket collection ledger structure.
+        # ---------------------------------------------------------------------
+        for data, position in strategy.positions.items():
+            if position.size == 0:
+                continue
+
+            symbol = str(data._name)
+
+            # Map math polarity to core domain execution directions
+            if position.size > 0:
+                side = PositionSide.LONG
+            else:
+                side = PositionSide.SHORT
+
+            # Strict type mutation pipeline: float -> str -> Decimal
+            quantity = Decimal(str(abs(float(position.size))))
+            entry_price = Decimal(str(float(position.price)))
+
+            # In standard netting configurations, ticket_id mirrors the asset symbol
+            active_records[symbol] = Position(
+                symbol=symbol,
+                ticket_id=f'BACKTRADER-{symbol}',
+                side=side,
+                quantity=quantity,
+                entry_price=entry_price,
+            )
+
+        return PositionLedger(records=active_records)
 
 # -----------------------------------------------------------------------------
 
