@@ -303,7 +303,11 @@ class BacktraderBrokerAdapter(BaseBrokerAdapter):
             )
 
         target_data = self._resolve_data_feed(order.symbol)
-        self._route_transaction(order, target_data, raw_quantity)
+
+        # Enforce atomic reentrant protection to block Cerebro from executing
+        # cycles or check_submitted routines during bracket chain creation.
+        with self._bridge.get_lock():
+            self._route_transaction(order, target_data, raw_quantity)
 
 # =============================================================================
 # -----------------------------------------------------------------------------

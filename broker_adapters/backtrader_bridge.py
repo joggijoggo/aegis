@@ -42,6 +42,7 @@ class BacktraderBridge:
         self._advance_event = threading.Event()
         self._market_queue: Queue = Queue()
         self._broker_queue: Queue = Queue()
+        self._lock = threading.RLock()  # Reentrant lock guarding concurrent execution boundaries
         self._strategy = None
         self._is_completed = False
 
@@ -72,6 +73,16 @@ class BacktraderBridge:
     def get_broker_queue(self) -> Queue:
         """Returns the data queue for broker transaction notifications."""
         return self._broker_queue
+
+# -----------------------------------------------------------------------------
+
+    def get_lock(self) -> threading.RLock:
+        """Returns the structural execution synchronization lock for atomic thread isolation.
+
+        Returns:
+            The active reentrant thread lock instance.
+        """
+        return self._lock
 
 # -----------------------------------------------------------------------------
 
@@ -125,6 +136,12 @@ class BacktraderBridge:
             self._advance_event.clear()
             self._market_queue.put(data)
             self._advance_event.wait()
+
+            # Enforce a reentrant structural lock barrier immediately upon wake up.
+            # This blocks Cerebro from advancing to broker.next() -> check_submitted()
+            # if the domain thread is currently inside submit_order().
+            with self._lock:
+                pass
         else:
             self._broker_queue.put((event_type, data))
 
