@@ -34,6 +34,11 @@ class AssetSymbolNotFoundError(AegisError):
 
 # -----------------------------------------------------------------------------
 
+class BrokerConfigurationError(AegisError):
+    """The underlying broker infrastructure parameters or commission schemes are misconfigured."""
+
+# -----------------------------------------------------------------------------
+
 class InvalidOrderQuantityError(AegisError):
     """Execution order volume is zero or negative at the adapter boundary."""
 
@@ -260,8 +265,26 @@ class BacktraderBrokerAdapter(BaseBrokerAdapter):
             if position.size == 0:
                 continue
 
+            symbol = str(data._name)
             comminfo = broker.getcommissioninfo(data)
             margin_per_unit = comminfo.get_margin(position.price)
+
+            if margin_per_unit is None:
+                is_stocklike = getattr(comminfo, '_stocklike', False)
+
+                # Hard enforcement: If the broker treats the asset as stocklike (margin=None)
+                # but the order tracking environment has no explicit commission info applied,
+                # we must check if this matches our structural testing bounds.
+                # To prevent silent margin calculation bypass, we explicitly raise if the
+                # asset's underlying params mapping reflects an uninitialized default environment.
+                if is_stocklike and comminfo.p.commission == 0.0 and comminfo.p.mult == 1.0:
+                    raise BrokerConfigurationError(
+                        f"Microstructural Misconfiguration Detected: Asset '{symbol}' "
+                        f"is running under an uninitialized default Backtrader CommissionInfo scheme. "
+                        f"Define margin or leverage bounds using setcommission."
+                    )
+
+                margin_per_unit = 0.0
 
             # Total locked margin = absolute size * margin required per unit
             raw_position_margin = abs(float(position.size)) * margin_per_unit

@@ -14,6 +14,7 @@ from broker_adapters.backtrader_bridge import BacktraderBridge
 from broker_adapters.backtrader_broker_adapter import (
     AssetSymbolNotFoundError,
     BacktraderBrokerAdapter,
+    BrokerConfigurationError,
     InvalidOrderQuantityError,
     InvalidProtectionPriceError,
 )
@@ -123,6 +124,59 @@ def test_backtrader_broker_adapter_account_snapshot_margin_deduction() -> None:
     assert snapshot.balance == Decimal("10000")
     assert snapshot.equity == Decimal("10000")
     assert snapshot.available_margin == Decimal("9940")
+
+# -----------------------------------------------------------------------------
+
+def test_backtrader_broker_adapter_account_snapshot_unconfigured_margin_raises_error() -> None:
+    """Verifies that get_account_snapshot catches unconfigured margin boundaries on futures."""
+    # 1. Setup Cerebro with a standard strategy and a raw unconfigured asset stream
+    cerebro = bt.Cerebro()
+
+    class DummyStrategy(bt.Strategy):
+        def __init__(self, *args, **kwargs) -> None:
+            super().__init__(*args, **kwargs)
+
+    cerebro.addstrategy(DummyStrategy)
+
+    class DummyDataFeed(bt.feed.DataBase):
+        params = (('name', ''),)
+        def __init__(self, *args, **kwargs) -> None:
+            super().__init__(*args, **kwargs)
+            self._name = self.p.name
+
+    data_eurusd = DummyDataFeed(name="EURUSD")
+    cerebro.adddata(data_eurusd)
+
+    # We do NOT set commissions or margins here, simulating a configuration omission debt
+    cerebro.broker.set_cash(10000.0)
+
+    strategies = cerebro.run()
+    strategy = strategies[0]
+
+    # 2. Setup infrastructure synchronization adapters
+    bridge = BacktraderBridge()
+    adapter = BacktraderBrokerAdapter(bridge=bridge)
+
+    # 3. Forge a real active position to force loop execution pathing
+    position_active = bt.Position()
+    position_active.size = 1
+    position_active.price = 1.08500
+
+    # Inject the exposure record directly into the broker mapping layer
+    strategy.broker.positions = {
+        data_eurusd: position_active,
+    }
+    bridge.bind_strategy(strategy)
+
+    # 4. Target Execution Path:
+    # BEFORE THE FIX: This will throw TypeError because margin_per_unit is None.
+    # AFTER THE FIX: This will throw our custom BrokerConfigurationError.
+    with pytest.raises(BrokerConfigurationError) as exc_info:
+        adapter.get_account_snapshot()
+
+    # Verify that the custom exception carries clear diagnostic messaging
+    assert "Microstructural Misconfiguration Detected" in str(exc_info.value)
+    assert "EURUSD" in str(exc_info.value)
 
 # -----------------------------------------------------------------------------
 
