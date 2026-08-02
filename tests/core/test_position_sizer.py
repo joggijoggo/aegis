@@ -81,7 +81,7 @@ def test_sizer_calculates_exact_volume_on_native_currency_match(
     assert order.quantity == Decimal('0.20')
     assert order.side == OrderSide.BUY
     assert order.order_type == OrderType.MARKET
-    assert order.time_in_force == TimeInForce.DAY
+    assert order.time_in_force == TimeInForce.GTC
     assert order.stop_loss_price == Decimal('1.08010')
     assert order.take_profit_price == Decimal('1.09510')
 
@@ -114,7 +114,7 @@ def test_sizer_calculates_volume_with_cross_currency_translation() -> None:
     assert order.quantity == Decimal('0.21')
     assert order.side == OrderSide.BUY
     assert order.order_type == OrderType.MARKET
-    assert order.time_in_force == TimeInForce.DAY
+    assert order.time_in_force == TimeInForce.GTC
     assert order.stop_loss_price == Decimal('1.08010')
     assert order.take_profit_price == Decimal('1.09510')
 

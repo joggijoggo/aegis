@@ -17,6 +17,9 @@ dependencies = [
 minversion = "7.0"
 addopts = "--cov=core --cov=strategies --cov=bots --cov=market_feeds --cov=broker_adapters --cov-report term-missing --cov-report html"
 testpaths = ["tests"]
+filterwarnings = [
+    "error::pytest.PytestUnhandledThreadExceptionWarning"
+]
 
 [tool.coverage.run]
 source = [

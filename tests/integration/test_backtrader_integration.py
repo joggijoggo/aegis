@@ -4,19 +4,26 @@ Executes end-to-end integration tests over synchronized multi-threaded environme
 """
 
 from datetime import datetime
+from decimal import Decimal
 import threading
 from unittest.mock import MagicMock
 
 import backtrader as bt
 
+from bots.base_bot import BaseBot
 from broker_adapters.backtrader_bridge import BacktraderBridge
 from broker_adapters.backtrader_broker_adapter import BacktraderBrokerAdapter
 from broker_adapters.backtrader_proxy_strategy import BacktraderProxyStrategy
 from core.contract_registry import ContractRegistry
+from core.currency_converter import CurrencyConverter
 from core.execution_engine import AegisExecutionEngine
-from core.models import ExposureIntent
+from core.models import (
+    ExposureIntent,
+    MarketContext,
+)
 from core.position_sizer import PositionSizer
 from market_feeds.backtrader_market_feed import BacktraderMarketFeed
+from tests.testutils import create_contract_specification_factory
 from tests.testutils.mocks import FakeBot
 
 # =============================================================================
@@ -61,6 +68,105 @@ class PureMemoryDataFeed(bt.feed.DataBase):
 # =============================================================================
 # -----------------------------------------------------------------------------
 # =============================================================================
+
+class ActiveStatefulFakeBot(BaseBot):
+    """Stateful fake bot emitting a single long signal then turning passive."""
+
+    def __init__(self, warm_up: int = 0) -> None:
+        """Initializes the tracking state flag and warm-up requirements."""
+        self._signal_emitted = False
+        self._warm_up_period = warm_up
+
+    def evaluate(self, market_context: MarketContext, historical_values: list[float]) -> ExposureIntent:
+        """Emits an entry signal on the first tick, then switches to passive holding."""
+        if not self._signal_emitted:
+            self._signal_emitted = True
+            return ExposureIntent(alpha_direction=1.0, stop_loss_ticks=10.0, take_profit_ticks=20.0)
+
+        # Maintain passive holding state for the rest of the simulation stream
+        return ExposureIntent(alpha_direction=None, stop_loss_ticks=0.0, take_profit_ticks=0.0)
+
+    @property
+    def warm_up_period(self) -> int:
+        """Gets the minimum data length boundary required for strategy evaluation."""
+        return self._warm_up_period
+
+# =============================================================================
+# -----------------------------------------------------------------------------
+# =============================================================================
+
+def test_backtrader_integration_active_flow() -> None:
+    """Verifies end-to-end active transaction processing in a multi-threaded closed loop."""
+    cerebro = bt.Cerebro()
+    bridge = BacktraderBridge()
+
+    # Bind the proxy strategy infrastructure to the synchronized bridge
+    cerebro.addstrategy(BacktraderProxyStrategy, bridge=bridge)
+
+    # Use our pandas-free memory feed to supply market ticks
+    memory_feed = PureMemoryDataFeed()
+    cerebro.adddata(memory_feed, name='EURUSD')
+
+    # Instantiate our stateful bot to prevent order spamming
+    active_bot = ActiveStatefulFakeBot(warm_up=0)
+    broker_adapter = BacktraderBrokerAdapter(bridge=bridge)
+
+    # Enforce EURUSD specification tracking inside the registry
+    contract_spec = create_contract_specification_factory(symbol='EURUSD')
+    contract_registry = ContractRegistry(specifications={'EURUSD': contract_spec})
+
+    # Setup a working currency converter locked to parity
+    currency_converter = CurrencyConverter()
+    currency_converter.update_rate(pair='EURUSD', rate=Decimal('1.00'))
+    currency_converter.update_rate(pair='USDEUR', rate=Decimal('1.00'))
+
+    # Instantiate the real position sizer configured natively with the execution policy
+    # demanded by the Backtrader microstructure boundary layer, preventing patching debt.
+    position_sizer = PositionSizer(currency_converter=currency_converter)
+
+    # Instantiate the complete orchestration layer
+    engine = AegisExecutionEngine(
+        bot=active_bot,
+        broker_adapter=broker_adapter,
+        contract_registry=contract_registry,
+        position_sizer=position_sizer,
+    )
+    market_feed = BacktraderMarketFeed(bridge=bridge)
+
+    def run_backtrader_infrastructure() -> None:
+        """Runs the Cerebro historical execution loop inside the background thread."""
+        cerebro.run()
+
+    def run_engine_domain() -> None:
+        """Runs the main Aegis domain execution loop inside the foreground thread."""
+        try:
+            engine.run_execution_cycle(symbol='EURUSD', market_feed=market_feed)
+        except Exception:
+            # Prevent deadlocks by unblocking the synchronization bridges on early failure
+            bridge.stop_simulation()
+            raise
+
+    # Enforce background daemon states to protect the environment against test freezes
+    infra_thread = threading.Thread(target=run_backtrader_infrastructure, daemon=True)
+    domain_thread = threading.Thread(target=run_engine_domain, daemon=True)
+
+    try:
+        infra_thread.start()
+        domain_thread.start()
+
+        # Allow sufficient temporal tolerance for threads to execute and exit safely
+        infra_thread.join(timeout=2.0)
+        domain_thread.join(timeout=2.0)
+    finally:
+        # Final safety clear to unlock threads
+        bridge.stop_simulation()
+
+    # Assert accurate state alignment upon successful loop exit
+    assert bridge.is_simulation_completed() is True
+    assert not infra_thread.is_alive()
+    assert not domain_thread.is_alive()
+
+# -----------------------------------------------------------------------------
 
 def test_backtrader_integration_passive_flow() -> None:
     """Verifies end-to-end synchronization mechanics using a pure in-memory data feed."""
