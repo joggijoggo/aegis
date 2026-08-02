@@ -32,6 +32,7 @@ class BacktraderMarketFeed(BaseMarketFeed):
             bridge: The central synchronization bridge.
         """
         self._bridge = bridge
+        self._is_first_tick = True  # Cold-start lock-step synchronization guard
 
 # -----------------------------------------------------------------------------
 
@@ -47,7 +48,17 @@ class BacktraderMarketFeed(BaseMarketFeed):
         if self._bridge.is_simulation_completed():
             raise StopIteration
 
-        self._bridge.advance_time()
+        # ---------------------------------------------------------------------
+        # During the very first cycle, Cerebro pre-populates the market queue
+        # upon strategy binding initialization. We must fetch this initial bar
+        # directly without calling advance_time(), preventing the background
+        # infrastructure thread from skipping Bar 1 prematurely.
+        # ---------------------------------------------------------------------
+        if self._is_first_tick:
+            self._is_first_tick = False
+        else:
+            self._bridge.advance_time()
+
         raw_data = self._bridge.get_market_queue().get()
 
         # Intercept the infrastructure shutdown signal to gracefully halt

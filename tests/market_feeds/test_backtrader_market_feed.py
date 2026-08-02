@@ -20,7 +20,10 @@ from market_feeds.backtrader_market_feed import BacktraderMarketFeed
 # =============================================================================
 
 def test_backtrader_market_feed_nominal_iteration() -> None:
-    """Verifies that next extracts raw records and triggers translation."""
+    """Verifies that next extracts raw records and handles cold-start time advancement.
+
+    Validates that advance_time is bypassed on the first tick and triggered on the second.
+    """
     mock_bridge = MagicMock(spec=BacktraderBridge)
     mock_bridge.is_simulation_completed.return_value = False
 
@@ -30,18 +33,30 @@ def test_backtrader_market_feed_nominal_iteration() -> None:
 
     feed = BacktraderMarketFeed(bridge=mock_bridge)
     mock_context = MagicMock(spec=MarketContext)
-
     feed._translate_to_market_context = MagicMock(return_value=mock_context)
-    context = next(feed)
 
-    assert context is mock_context
-    mock_bridge.advance_time.assert_called_once()
+    # 1. Execute first iteration (Cold-start lock-step boundary)
+    context_1 = next(feed)
+    assert context_1 is mock_context
+    assert mock_bridge.advance_time.call_count == 0
+    feed._translate_to_market_context.assert_called_once_with('raw_tick_payload')
+
+    # 2. Reset translator mock to inspect the second tick call sequence
+    feed._translate_to_market_context.reset_mock()
+
+    # 3. Execute second iteration (Nominal rolling window boundary)
+    context_2 = next(feed)
+    assert context_2 is mock_context
+    assert mock_bridge.advance_time.call_count == 1
     feed._translate_to_market_context.assert_called_once_with('raw_tick_payload')
 
 # -----------------------------------------------------------------------------
 
 def test_backtrader_market_feed_poison_pill_deadlock_reproduction() -> None:
-    """Verifies that a None sentinel in the market queue immediately halts iteration before translation."""
+    """Verifies that a None sentinel in the market queue immediately halts iteration before translation.
+
+    Ensures that the cold-start safeguard blocks temporal progression to avoid deadlocks.
+    """
     mock_bridge = MagicMock(spec=BacktraderBridge)
     mock_bridge.is_simulation_completed.return_value = False
 
@@ -54,12 +69,11 @@ def test_backtrader_market_feed_poison_pill_deadlock_reproduction() -> None:
     # Spy on the internal translator to ensure the guard blocks execution completely
     feed._translate_to_market_context = MagicMock()
 
-    # Executing the un-guarded production code right now MUST FAIL this test
-    # either by reaching the real code or raising StopIteration prematurely.
     with pytest.raises(StopIteration):
         _ = next(feed)
 
-    mock_bridge.advance_time.assert_called_once()
+    # Cold-start mechanism must catch the None packet before advance_time is invoked
+    assert mock_bridge.advance_time.call_count == 0
     feed._translate_to_market_context.assert_not_called()
 
 # -----------------------------------------------------------------------------
@@ -74,7 +88,7 @@ def test_backtrader_market_feed_termination_guard() -> None:
     with pytest.raises(StopIteration):
         _ = next(feed)
 
-    mock_bridge.advance_time.assert_not_called()
+    assert mock_bridge.advance_time.call_count == 0
 
 # -----------------------------------------------------------------------------
 
