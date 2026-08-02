@@ -246,17 +246,36 @@ class BacktraderBrokerAdapter(BaseBrokerAdapter):
             The account metrics snapshot.
         """
         strategy = self._bridge.strategy
+        broker = strategy.broker
 
-        raw_balance = float(strategy.broker.get_cash())
-        raw_equity = float(strategy.broker.get_value())
+        raw_balance = float(broker.get_cash())
+        raw_equity = float(broker.get_value())
 
-        raw_available_margin = raw_equity # TODO: subtract locked margin for open positions
+        balance = Decimal(str(raw_balance))
+        equity = Decimal(str(raw_equity))
+        locked_margin = Decimal("0.0")
+
+        # Iterate over Backtrader's active positions to query its native margin engine
+        for data, position in strategy.positions.items():
+            if position.size == 0:
+                continue
+
+            comminfo = broker.getcommissioninfo(data)
+            margin_per_unit = comminfo.get_margin(position.price)
+
+            # Total locked margin = absolute size * margin required per unit
+            raw_position_margin = abs(float(position.size)) * margin_per_unit
+            locked_margin += Decimal(str(raw_position_margin))
+
+        # Backtrader evaluates order acceptance against available liquid cash boundaries.
+        # Thus, available margin must be anchored to balance, not floating equity.
+        available_margin = balance - locked_margin
 
         return AccountSnapshot(
-            currency='USD',  # TODO: extract dynamically from environment
-            balance=Decimal(str(raw_balance)),
-            equity=Decimal(str(raw_equity)),
-            available_margin=Decimal(str(raw_available_margin)),
+            currency="USD",  # TODO: extract dynamically from environment
+            balance=balance,
+            equity=equity,
+            available_margin=available_margin,
         )
 
 # -----------------------------------------------------------------------------

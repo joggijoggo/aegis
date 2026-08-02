@@ -41,6 +41,9 @@ def test_backtrader_broker_adapter_account_snapshot() -> None:
     mock_strategy = MagicMock()
     mock_strategy.broker.get_cash.return_value = 10000.50
     mock_strategy.broker.get_value.return_value = 10500.75
+
+    # Inject an empty positions mapping to simulate a portfolio clear of exposure
+    mock_strategy.positions = {}
     mock_bridge.strategy = mock_strategy
 
     adapter = BacktraderBrokerAdapter(bridge=mock_bridge)
@@ -50,7 +53,76 @@ def test_backtrader_broker_adapter_account_snapshot() -> None:
     assert snapshot.currency == 'USD'
     assert snapshot.balance == Decimal('10000.50')
     assert snapshot.equity == Decimal('10500.75')
-    assert snapshot.available_margin == Decimal('10500.75')
+    assert snapshot.available_margin == Decimal('10000.50')
+
+# -----------------------------------------------------------------------------
+
+def test_backtrader_broker_adapter_account_snapshot_margin_deduction() -> None:
+    """Verifies that get_account_snapshot anchors available_margin to cash minus locked margin."""
+    # 1. Setup Cerebro with an authentic strategy and a custom commission scheme
+    cerebro = bt.Cerebro()
+
+    class DummyStrategy(bt.Strategy):
+        """Minimalistic concrete strategy container mapping active positions."""
+        def __init__(self, *args, **kwargs) -> None:
+            super().__init__(*args, **kwargs)
+
+    cerebro.addstrategy(DummyStrategy)
+
+    class DummyDataFeed(bt.feed.DataBase):
+        """Minimalistic concrete data feed for structural alignment."""
+        params = (('name', ''),)
+        def __init__(self, *args, **kwargs) -> None:
+            super().__init__(*args, **kwargs)
+            self._name = self.p.name
+
+    data_eurusd = DummyDataFeed(name="EURUSD")
+    data_flat = DummyDataFeed(name="USDJPY")
+
+    cerebro.adddata(data_eurusd)
+    cerebro.adddata(data_flat)
+
+    # Configure a fixed cash balance on the core broker engine
+    cerebro.broker.set_cash(10000.0)
+
+    # Configure a realistic margin requirement rule for our Forex asset
+    # To avoid automargin side-effects, we force a flat margin fee of 30.0 units per lot.
+    cerebro.broker.setcommission(commission=0.0, margin=30.0, mult=1.0, name="EURUSD")
+
+    strategies = cerebro.run()
+    strategy = strategies[0]
+
+    # 2. Setup the framework synchronization components
+    bridge = BacktraderBridge()
+    adapter = BacktraderBrokerAdapter(bridge=bridge)
+
+    # 3. Forge a real active position of 2 lots (size=2) at a specific execution level
+    position_active = bt.Position()
+    position_active.size = 2
+    position_active.price = 1.08500
+
+    position_flat = bt.Position()
+    position_flat.size = 0
+    position_flat.price = 0.0
+
+    # Inject the exposure record directly into the broker mapping layer
+    strategy.broker.positions = {
+        data_eurusd: position_active,
+        data_flat: position_flat,
+    }
+    bridge.bind_strategy(strategy)
+
+    # 4. Execute the account snapshot mapping translation
+    snapshot = adapter.get_account_snapshot()
+
+    # 5. Assertions verifying the microstructure tracking rule (Available Margin = Cash - Margin)
+    # Total Cash = 10000.0
+    # Locked Margin = 2 contracts * 30.0 margin fee per unit (via get_margin) = 60.0
+    # Expected Available Margin = 10000.0 - 60.0 = 9940.0
+    assert snapshot.currency == "USD"
+    assert snapshot.balance == Decimal("10000")
+    assert snapshot.equity == Decimal("10000")
+    assert snapshot.available_margin == Decimal("9940")
 
 # -----------------------------------------------------------------------------
 
