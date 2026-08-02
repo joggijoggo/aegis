@@ -22,6 +22,8 @@ from tests.testutils.factories import (
     create_contract_specification_factory as create_contract_specification_factory,
     create_market_context_factory as create_market_context_factory,
     create_order_factory as create_order_factory,
+    create_position_factory as create_position_factory,
+    create_position_ledger_factory as create_position_ledger_factory,
 )
 from tests.testutils.mocks import (
     FakeBot as FakeBot,

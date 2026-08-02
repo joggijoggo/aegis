@@ -1,5 +1,6 @@
 """Aegis Framework - Domain Model Testing Factories."""
 
+from decimal import Decimal
 import uuid
 
 from core.models import (
@@ -8,6 +9,9 @@ from core.models import (
     Order,
     OrderSide,
     OrderType,
+    Position,
+    PositionLedger,
+    PositionSide,
     TimeInForce,
 )
 from core.models.market import (
@@ -106,6 +110,30 @@ def create_order_factory(**kwargs) -> Order:
     }
     defaults.update(kwargs)
     return Order(**defaults)
+
+# -----------------------------------------------------------------------------
+
+def create_position_factory(**kwargs) -> Position:
+    """Generates a Position instance with dynamic keyword overrides."""
+    defaults = {
+        'symbol': DEFAULT_SYMBOL,
+        'ticket_id': 'TKT-CHILEAN-TEST-ID',
+        'side': PositionSide.LONG,
+        'quantity': Decimal('1.0'),
+        'entry_price': Decimal('1.08500'),
+    }
+    defaults.update(kwargs)
+    return Position(**defaults)
+
+# -----------------------------------------------------------------------------
+
+def create_position_ledger_factory(**kwargs) -> PositionLedger:
+    """Generates a PositionLedger instance with dynamic keyword overrides."""
+    defaults = {
+        'records': {},
+    }
+    defaults.update(kwargs)
+    return PositionLedger(**defaults)
 
 # =============================================================================
 # -----------------------------------------------------------------------------

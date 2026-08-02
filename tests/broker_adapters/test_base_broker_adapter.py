@@ -18,6 +18,7 @@ from core.models import (
     Order,
     OrderSide,
     OrderType,
+    PositionLedger,
     TimeInForce,
 )
 
@@ -43,6 +44,9 @@ def test_base_broker_adapter_nominal_implementation() -> None:
                 equity=Decimal('10000.00'),
                 available_margin=Decimal('10000.00'),
             )
+
+        def get_position_ledger(self) -> PositionLedger:
+            raise NotImplementedError()
 
         def submit_order(self, order: Order) -> None:
             pass

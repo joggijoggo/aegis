@@ -19,6 +19,7 @@ from core.models import (
     OrderSide,
     OrderStatus,
     OrderType,
+    PositionLedger,
     TimeInForce,
 )
 
@@ -254,6 +255,18 @@ class BacktraderBrokerAdapter(BaseBrokerAdapter):
             balance=Decimal(str(raw_balance)),
             equity=Decimal(str(raw_equity)),
             available_margin=Decimal(str(raw_available_margin)),
+        )
+
+# -----------------------------------------------------------------------------
+
+    def get_position_ledger(self) -> PositionLedger:
+        """Retrieves the immutable ledger of all currently active market exposures from Backtrader.
+
+        Returns:
+            PositionLedger instance containing open positions indexed by ticket_id.
+        """
+        raise NotImplementedError(
+            "Position ledger extraction is not yet implemented for the Backtrader adapter."
         )
 
 # -----------------------------------------------------------------------------
