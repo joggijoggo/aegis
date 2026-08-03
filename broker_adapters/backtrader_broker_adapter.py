@@ -414,6 +414,8 @@ class BacktraderBrokerAdapter(BaseBrokerAdapter):
             BridgeUnboundError: The strategy instance is not bound.
             InvalidOrderQuantityError: The execution volume is non-positive.
         """
+        # print(f'\n{order}\n')
+
         raw_quantity = float(order.quantity)
         if raw_quantity <= 0.0:
             raise InvalidOrderQuantityError(
