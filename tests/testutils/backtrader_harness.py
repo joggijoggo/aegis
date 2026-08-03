@@ -4,23 +4,45 @@ Provides standardized encapsulation orchestration to drive synchronized executio
 completely abstracting core infrastructure instantiation boilerplate.
 """
 
+from dataclasses import dataclass
 import threading
-from typing import Any, Callable, List, Optional
+from typing import (
+    Any,
+    Callable,
+    List,
+    Optional,
+)
 
 import backtrader as bt
 
 from broker_adapters.backtrader_bridge import BacktraderBridge
 from broker_adapters.backtrader_broker_adapter import BacktraderBrokerAdapter
 from broker_adapters.backtrader_proxy_strategy import BacktraderProxyStrategy
-from bots.base_bot import BaseBot
+from bots.base_bot import BaseBot, ExposureIntent, MarketContext
 from core.contract_registry import ContractRegistry
 from core.execution_engine import AegisExecutionEngine
+from core.models import (
+    AccountSnapshot,
+    PositionLedger,
+)
 from core.position_sizer import PositionSizer
 from market_feeds.backtrader_market_feed import BacktraderMarketFeed
 from tests.testutils.factories import (
     create_contract_specification_factory,
     create_position_sizer_factory,
 )
+
+# =============================================================================
+# -----------------------------------------------------------------------------
+# =============================================================================
+
+@dataclass(frozen=True)
+class DomainTelemetryRecord:
+    """Immutable historic entry capturing complete Aegis state at a single step."""
+    account_snapshot: AccountSnapshot
+    exposure_intent: ExposureIntent
+    market_context: MarketContext
+    position_ledger: PositionLedger
 
 # =============================================================================
 # -----------------------------------------------------------------------------
@@ -64,6 +86,100 @@ class MemoryDataFeed(bt.feed.DataBase):
             return True
         except StopIteration:
             return False
+
+# =============================================================================
+# -----------------------------------------------------------------------------
+# =============================================================================
+
+class TelemetryBot(BaseBot):
+    """Stateful testing bot capturing architecture telemetry metrics while driving market intents."""
+
+# -----------------------------------------------------------------------------
+
+    def __init__(self, broker_adapter: Optional[BacktraderBrokerAdapter] = None, warm_up: int = 0) -> None:
+        """Initializes the telemetry logger buffer and binds optional adapter dependencies.
+
+        Args:
+            broker_adapter: Optional production adapter interface plugged into the harness.
+            warm_up: Minimum data length required before evaluation loops.
+        """
+        super().__init__()
+        self._adapter = broker_adapter
+        self._warm_up_period = warm_up
+
+        self.history: List[DomainTelemetryRecord] = []
+
+# -----------------------------------------------------------------------------
+
+    def _evaluate(self, market_context: MarketContext, historical_values: List[float]) -> ExposureIntent:
+        """Executes the internal strategy decision logic, defaulting to a permanent flat posture.
+
+        This method should be overridden by specific integration test scenarios to control
+        active transactional flows.
+
+        Args:
+            market_context: The active market price and volume context point.
+            historical_values: Trailing price array series.
+
+        Returns:
+            A neutral market exposure intent forcing a flat posture loop by default.
+        """
+        # Stay flat by default.
+        return ExposureIntent(alpha_direction=None, stop_loss_ticks=0.0, take_profit_ticks=0.0)
+
+# -----------------------------------------------------------------------------
+
+    def evaluate(self, market_context: MarketContext, historical_values: List[float]) -> ExposureIntent:
+        """Captures active domain state telemetry internally and routes core strategy calculations.
+
+        Args:
+            market_context: The active market price and volume context point.
+            historical_values: Trailing price array series.
+
+        Returns:
+            The calculated market exposure intent mapped from the internal decision logic.
+        """
+        if self._adapter is None:
+            raise RuntimeError(
+                "TelemetryBot execution aborted: The broker_adapter reference was not coupled. "
+                "Ensure set_broker_adapter() is invoked before starting the simulation loop."
+            )
+
+        account_snapshot = self._adapter.get_account_snapshot()
+        position_ledger = self._adapter.get_position_ledger()
+
+        exposure_intent = self._evaluate(market_context, historical_values)
+
+        self.history.append(
+            DomainTelemetryRecord(
+                account_snapshot=account_snapshot,
+                exposure_intent=exposure_intent,
+                market_context=market_context,
+                position_ledger=position_ledger
+            )
+        )
+        return exposure_intent
+
+# -----------------------------------------------------------------------------
+
+    def set_broker_adapter(self, broker_adapter: BacktraderBrokerAdapter) -> None:
+        """Couples the production broker adapter reference into the telemetry spy bot.
+
+        Args:
+            broker_adapter: The active production infrastructure adapter instance.
+        """
+        self._adapter = broker_adapter
+
+# -----------------------------------------------------------------------------
+
+    @property
+    def warm_up_period(self) -> int:
+        """Gets the minimum historical data length boundary required for evaluation.
+
+        Returns:
+            The minimum data length integer constraint.
+        """
+        return self._warm_up_period
 
 # =============================================================================
 # -----------------------------------------------------------------------------
@@ -131,6 +247,10 @@ class BacktraderTestHarness:
             contract_registry=self.contract_registry,
             position_sizer=self.position_sizer,
         )
+
+        # Automated dynamic hook coupling for TelemetryBot instances to resolve cyclic dependencies
+        if isinstance(bot, TelemetryBot):
+            bot.set_broker_adapter(self.broker_adapter)
 
         # Pre-bind structural background daemon thread handles
         self._domain_thread: Optional[threading.Thread] = None
