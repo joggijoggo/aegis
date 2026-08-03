@@ -13,10 +13,14 @@ from core.models import (
     MarketContext,
     Order,
     OrderStatus,
+    PositionLedger,
 )
 from market_feeds.base_market_feed import BaseMarketFeed
 from strategies.base_strategy import AbstractStrategy
-from tests.testutils.factories import create_account_snapshot_factory
+from tests.testutils import (
+    create_account_snapshot_factory,
+    create_position_ledger_factory,
+)
 
 # =============================================================================
 # -----------------------------------------------------------------------------
@@ -62,10 +66,15 @@ class FakeBrokerAdapter(BaseBrokerAdapter):
 
 # -----------------------------------------------------------------------------
 
-    def __init__(self, account_snapshot: AccountSnapshot | None = None):
+    def __init__(
+        self,
+        account_snapshot: AccountSnapshot | None = None,
+        position_ledger: PositionLedger | None = None
+    ):
         """Initializes the fake broker gateway with a static ledger snapshot."""
         self.submitted_orders: list[Order] = []
         self._account_snapshot = account_snapshot or create_account_snapshot_factory()
+        self._position_ledger = position_ledger or create_position_ledger_factory()
         self._pending_events: Queue = Queue()
 
 # -----------------------------------------------------------------------------
@@ -73,6 +82,12 @@ class FakeBrokerAdapter(BaseBrokerAdapter):
     def get_account_snapshot(self) -> AccountSnapshot:
         """Gets the current trading account snapshot."""
         return self._account_snapshot
+
+# -----------------------------------------------------------------------------
+
+    def get_position_ledger(self) -> PositionLedger:
+        """Gets the current position ledger snapshot from the fake venue ledger."""
+        return self._position_ledger
 
 # -----------------------------------------------------------------------------
 

@@ -1,19 +1,26 @@
 """Aegis Framework - Domain Model Testing Factories."""
 
+from decimal import Decimal
+from typing import Any
 import uuid
 
+from core.currency_converter import CurrencyConverter
 from core.models import (
     AccountSnapshot,
     ContractSpecification,
     Order,
     OrderSide,
     OrderType,
+    Position,
+    PositionLedger,
+    PositionSide,
     TimeInForce,
 )
 from core.models.market import (
     MarketContext,
     MarketPricePoint,
 )
+from core.position_sizer import PositionSizer
 from tests.testutils.constants import (
     BASE_TIMESTAMP,
     DEFAULT_ASSET_CURRENCY,
@@ -66,6 +73,22 @@ def create_contract_specification_factory(**kwargs) -> ContractSpecification:
 
 # -----------------------------------------------------------------------------
 
+def create_currency_converter_factory(**kwargs: Any) -> CurrencyConverter:
+    """Generates a CurrencyConverter instance with dynamic rate overrides."""
+    defaults = {
+        'EURUSD': Decimal('1.00'),
+        'USDEUR': Decimal('1.00'),
+    }
+    defaults.update(kwargs)
+
+    converter = CurrencyConverter()
+    for pair, rate in defaults.items():
+        converter.update_rate(pair=pair, rate=rate)
+
+    return converter
+
+# -----------------------------------------------------------------------------
+
 def create_market_context_factory(**kwargs) -> MarketContext:
     """Generates a MarketContext instance with dynamic keyword overrides."""
     prices_defaults = {
@@ -106,6 +129,40 @@ def create_order_factory(**kwargs) -> Order:
     }
     defaults.update(kwargs)
     return Order(**defaults)
+
+# -----------------------------------------------------------------------------
+
+def create_position_factory(**kwargs) -> Position:
+    """Generates a Position instance with dynamic keyword overrides."""
+    defaults = {
+        'symbol': DEFAULT_SYMBOL,
+        'ticket_id': 'TKT-CHILEAN-TEST-ID',
+        'side': PositionSide.LONG,
+        'quantity': Decimal('1.0'),
+        'entry_price': Decimal('1.08500'),
+    }
+    defaults.update(kwargs)
+    return Position(**defaults)
+
+# -----------------------------------------------------------------------------
+
+def create_position_ledger_factory(**kwargs) -> PositionLedger:
+    """Generates a PositionLedger instance with dynamic keyword overrides."""
+    defaults = {
+        'records': {},
+    }
+    defaults.update(kwargs)
+    return PositionLedger(**defaults)
+
+# -----------------------------------------------------------------------------
+
+def create_position_sizer_factory(**kwargs: Any) -> PositionSizer:
+    """Generates a PositionSizer instance with dynamic converter overrides."""
+    defaults = {
+        'currency_converter': create_currency_converter_factory(),
+    }
+    defaults.update(kwargs)
+    return PositionSizer(**defaults)
 
 # =============================================================================
 # -----------------------------------------------------------------------------

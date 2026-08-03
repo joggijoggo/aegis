@@ -4,7 +4,10 @@ Provides the infrastructure adapter to interface with the Backtrader broker comp
 """
 
 from decimal import Decimal
-from typing import Any
+from typing import (
+    Any,
+    Tuple,
+)
 
 import backtrader as bt
 
@@ -19,6 +22,9 @@ from core.models import (
     OrderSide,
     OrderStatus,
     OrderType,
+    Position,
+    PositionLedger,
+    PositionSide,
     TimeInForce,
 )
 
@@ -28,6 +34,11 @@ from core.models import (
 
 class AssetSymbolNotFoundError(AegisError):
     """The requested financial asset symbol is not loaded in the Cerebro environment."""
+
+# -----------------------------------------------------------------------------
+
+class BrokerConfigurationError(AegisError):
+    """The underlying broker infrastructure parameters or commission schemes are misconfigured."""
 
 # -----------------------------------------------------------------------------
 
@@ -59,6 +70,56 @@ class BacktraderBrokerAdapter(BaseBrokerAdapter):
         """
         self._bridge = bridge
         self._broker_queue = bridge.get_broker_queue()
+
+# -----------------------------------------------------------------------------
+
+    def _compute_portfolio_metrics(self, strategy: bt.Strategy) -> Tuple[Decimal, Decimal]:
+        """Iterates over active positions to extract true locked margin and spot acquisition costs.
+
+        Strictly aligned with the behavioral overrides of Backtrader v1.9.78.123.
+
+        Args:
+            strategy: The active runtime Backtrader strategy instance.
+
+        Returns:
+            A tuple containing the total locked margin and total spot acquisition cost.
+        """
+        total_locked_margin = Decimal("0.0")
+        total_spot_acquisition_cost = Decimal("0.0")
+
+        # Dynamically retrieve the underlying broker engine from the active strategy instance
+        broker: bt.Broker = strategy.broker
+
+        for data, position in strategy.positions.items():
+            if position.size == 0:
+                continue
+
+            comminfo = broker.getcommissioninfo(data)
+            is_stocklike = getattr(comminfo, '_stocklike', False) or getattr(comminfo.p, 'stocklike', False)
+
+            # Law 4: Leverage collateral requirement remains anchored to historical entry cost level
+            margin_per_unit = comminfo.get_margin(position.price)
+
+            # String-based decimal transformation pipeline to eradicate mantissa drift
+            abs_size = Decimal(str(abs(float(position.size))))
+            entry_price = Decimal(str(position.price))
+
+            # Regime 1: Authentic Future contract (stocklike=False)
+            if not is_stocklike:
+                if margin_per_unit is not None:
+                    total_locked_margin += abs_size * Decimal(str(margin_per_unit))
+
+            # Regime 4: Authentic Forex Gearing Leverage (stocklike=True + active automargin or leverage > 1)
+            elif getattr(comminfo.p, 'automargin', False) or getattr(comminfo.p, 'leverage', 1.0) > 1.0:
+                if margin_per_unit is not None:
+                    total_locked_margin += abs_size * Decimal(str(margin_per_unit))
+
+            # Regime 2 & 3: Spot Stock Cash OR Forex Fixed Margin (Overridden into spot cash mechanics)
+            else:
+                # Law 3: stocklike=True silently nullifies margin params, enforcing full cash depletion
+                total_spot_acquisition_cost += abs_size * entry_price
+
+        return total_locked_margin, total_spot_acquisition_cost
 
 # -----------------------------------------------------------------------------
 
@@ -239,22 +300,89 @@ class BacktraderBrokerAdapter(BaseBrokerAdapter):
     def get_account_snapshot(self) -> AccountSnapshot:
         """Returns the current financial state of the account.
 
+        Reconstructs the true portfolio core balance by resolving the multi-asset
+        invariant equation matrix.
+
         Returns:
-            The account metrics snapshot.
+            The normalized, decimal-validated AccountSnapshot domain record.
         """
-        strategy = self._bridge.strategy
+        strategy: bt.Strategy = self._bridge.strategy
+        broker: bt.Broker = strategy.broker
 
-        raw_balance = float(strategy.broker.get_cash())
-        raw_equity = float(strategy.broker.get_value())
+        # Law 1: Backtrader's cash ledger represents strictly the residual available free margin
+        raw_balance = float(broker.get_cash())
+        raw_equity = float(broker.get_value())
 
-        raw_available_margin = raw_equity # TODO: subtract locked margin for open positions
+        available_margin = Decimal(str(raw_balance))
+        equity = Decimal(str(raw_equity))
+
+        # Specialized SRP routine invocation tracking active contract matrix boundaries
+        locked_margin, spot_acquisition_cost = self._compute_portfolio_metrics(strategy=strategy)
+
+        # Resolution of the Invariant Universal Accounting Equation Matrix
+        balance = available_margin + locked_margin + spot_acquisition_cost
 
         return AccountSnapshot(
-            currency='USD',  # TODO: extract dynamically from environment
-            balance=Decimal(str(raw_balance)),
-            equity=Decimal(str(raw_equity)),
-            available_margin=Decimal(str(raw_available_margin)),
+            currency="USD",
+            balance=balance,
+            equity=equity,
+            available_margin=available_margin,
         )
+
+# -----------------------------------------------------------------------------
+
+    def get_position_ledger(self) -> PositionLedger:
+        """Retrieves the immutable ledger of all currently active market exposures from Backtrader.
+
+        Returns:
+            PositionLedger instance containing open positions indexed by ticket_id.
+        """
+        strategy = self._bridge.strategy
+        active_records: dict[str, Position] = {}
+
+        # ---------------------------------------------------------------------
+        # MICROSTRUCTURAL DESIGN NOTE:
+        # Theoretically, Backtrader's native broker ('bt.brokers.BackBroker')
+        # only supports strict 'Netting' semantics. It executes algebraic fusion
+        # on trade sizes per data feed, making the simultaneous coexistence of
+        # separate LONG and SHORT positions on the exact same feed impossible.
+        #
+        # POTENTIAL WORKAROUNDS FOR HEDGING STRATEGIES:
+        # 1. Data Feed Duplication: Inject the same market data multiple times
+        #    into Cerebro under unique names (e.g., 'EURUSD_1', 'EURUSD_2').
+        #    Backtrader treats them as distinct assets, allocating isolated
+        #    'bt.Position' states to each, which this ledger natively captures
+        #    as unique 'ticket_id' keys matching the feed names.
+        # 2. Custom Broker Extension: Override the core broker by subclassing
+        #    'bt.BrokerBase' to substitute the data-mapped dictionary with an
+        #    open ticket collection ledger structure.
+        # ---------------------------------------------------------------------
+        for data, position in strategy.positions.items():
+            if position.size == 0:
+                continue
+
+            symbol = str(data._name)
+
+            # Map math polarity to core domain execution directions
+            if position.size > 0:
+                side = PositionSide.LONG
+            else:
+                side = PositionSide.SHORT
+
+            # Strict type mutation pipeline: float -> str -> Decimal
+            quantity = Decimal(str(abs(float(position.size))))
+            entry_price = Decimal(str(float(position.price)))
+
+            # In standard netting configurations, ticket_id mirrors the asset symbol
+            active_records[symbol] = Position(
+                symbol=symbol,
+                ticket_id=f'BACKTRADER-{symbol}',
+                side=side,
+                quantity=quantity,
+                entry_price=entry_price,
+            )
+
+        return PositionLedger(records=active_records)
 
 # -----------------------------------------------------------------------------
 
@@ -286,6 +414,8 @@ class BacktraderBrokerAdapter(BaseBrokerAdapter):
             BridgeUnboundError: The strategy instance is not bound.
             InvalidOrderQuantityError: The execution volume is non-positive.
         """
+        # print(f'\n{order}\n')
+
         raw_quantity = float(order.quantity)
         if raw_quantity <= 0.0:
             raise InvalidOrderQuantityError(

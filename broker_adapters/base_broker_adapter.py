@@ -13,6 +13,7 @@ from core.models import (
     AccountSnapshot,
     BrokerEvent,
     Order,
+    PositionLedger,
 )
 
 # =============================================================================
@@ -33,6 +34,17 @@ class BaseBrokerAdapter(ABC):
 
         Raises:
             BrokerConnectionError: Broker connection failure.
+        """
+        pass
+
+# -----------------------------------------------------------------------------
+
+    @abstractmethod
+    def get_position_ledger(self) -> PositionLedger:
+        """Retrieves the immutable ledger of all currently active market exposures.
+
+        Returns:
+            PositionLedger instance containing open positions indexed by ticket_id.
         """
         pass
 

@@ -1,223 +1,201 @@
 """Aegis Framework - Backtrader Hybrid Integration Tests.
 
-Executes end-to-end integration tests over synchronized multi-threaded environments.
+Executes end-to-end integration tests over synchronized multi-threaded environments
+leveraging the automated testing harness infrastructure.
 """
 
 from datetime import datetime
-from decimal import Decimal
-import threading
-from unittest.mock import MagicMock
+from typing import List
 
-import backtrader as bt
-
-from bots.base_bot import BaseBot
-from broker_adapters.backtrader_bridge import BacktraderBridge
-from broker_adapters.backtrader_broker_adapter import BacktraderBrokerAdapter
-from broker_adapters.backtrader_proxy_strategy import BacktraderProxyStrategy
-from core.contract_registry import ContractRegistry
-from core.currency_converter import CurrencyConverter
-from core.execution_engine import AegisExecutionEngine
 from core.models import (
     ExposureIntent,
     MarketContext,
 )
-from core.position_sizer import PositionSizer
-from market_feeds.backtrader_market_feed import BacktraderMarketFeed
-from tests.testutils import create_contract_specification_factory
-from tests.testutils.mocks import FakeBot
+from tests.testutils.backtrader_harness import (
+    BacktraderTestHarness,
+    TelemetryBot,
+)
 
 # =============================================================================
 # -----------------------------------------------------------------------------
 # =============================================================================
 
-class PureMemoryDataFeed(bt.feed.DataBase):
-    """Lightweight in-memory data feed avoiding any external pandas dependency."""
+class ActiveTestBot(TelemetryBot):
+    """Stateful test bot capturing telemetry while driving a single initial intent."""
 
 # -----------------------------------------------------------------------------
 
-    def __init__(self) -> None:
-        """Initializes the memory stream with sequential historical bar data."""
+    def __init__(self, exposure_intent: ExposureIntent) -> None:
+        """Initializes the active testing instance with its single scheduled intent.
+
+        Args:
+            exposure_intent: The unique initial intent to emit at the very first step.
+        """
         super().__init__()
-        self._records = [
-            [datetime(2026, 8, 1, 12, 0), 1.1200, 1.1250, 1.1180, 1.1220, 5000.0, 0.0],
-            [datetime(2026, 8, 1, 12, 1), 1.1220, 1.1260, 1.1210, 1.1240, 5500.0, 0.0],
-            [datetime(2026, 8, 1, 12, 2), 1.1240, 1.1290, 1.1230, 1.1280, 6000.0, 0.0],
-        ]
-        self._iterator = iter(self._records)
+        self._exposure_intent = exposure_intent
 
 # -----------------------------------------------------------------------------
 
-    def _load(self) -> bool:
-        """Loads the next sequential row into the Backtrader internal lines matrix."""
-        try:
-            row = next(self._iterator)
+    def _evaluate(self, market_context: MarketContext, historical_values: List[float]) -> ExposureIntent:
+        """Emits the unique target intent on the first tick cycle, then switches to passive holding.
 
-            # Use explicit [0] indexation to mutate the current line buffer slot properly
-            self.lines.datetime[0] = bt.date2num(row[0])
-            self.lines.open[0] = row[1]
-            self.lines.high[0] = row[2]
-            self.lines.low[0] = row[3]
-            self.lines.close[0] = row[4]
-            self.lines.volume[0] = row[5]
-            self.lines.openinterest[0] = row[6]
+        Args:
+            market_context: The active market price and volume context point.
+            historical_values: Trailing price array series.
 
-            return True
-        except StopIteration:
-            return False
+        Returns:
+            The scheduled exposure intent at step 0, otherwise a neutral passive intent.
+        """
+        if len(self.history) == 0:
+            return self._exposure_intent
 
-# =============================================================================
-# -----------------------------------------------------------------------------
-# =============================================================================
-
-class ActiveStatefulFakeBot(BaseBot):
-    """Stateful fake bot emitting a single long signal then turning passive."""
-
-    def __init__(self, warm_up: int = 0) -> None:
-        """Initializes the tracking state flag and warm-up requirements."""
-        self._signal_emitted = False
-        self._warm_up_period = warm_up
-
-    def evaluate(self, market_context: MarketContext, historical_values: list[float]) -> ExposureIntent:
-        """Emits an entry signal on the first tick, then switches to passive holding."""
-        if not self._signal_emitted:
-            self._signal_emitted = True
-            return ExposureIntent(alpha_direction=1.0, stop_loss_ticks=10.0, take_profit_ticks=20.0)
-
-        # Maintain passive holding state for the rest of the simulation stream
         return ExposureIntent(alpha_direction=None, stop_loss_ticks=0.0, take_profit_ticks=0.0)
 
-    @property
-    def warm_up_period(self) -> int:
-        """Gets the minimum data length boundary required for strategy evaluation."""
-        return self._warm_up_period
+# =============================================================================
+# -----------------------------------------------------------------------------
+# =============================================================================
+
+def print_history(history, historical_prices = None):
+
+    if historical_prices:
+        print('Historical Prices:')
+        for price in historical_prices:
+            print(f'- {price}')
+
+    print('\n')
+    for (cycle, telemetry) in enumerate(history):
+        print(f'Cycle # {cycle}')
+        print('- ' + str(telemetry.market_context))
+        print('- ' + str(telemetry.exposure_intent))
+        print('- ' + str(telemetry.account_snapshot))
+        print('- ' + str(telemetry.position_ledger))
 
 # =============================================================================
 # -----------------------------------------------------------------------------
 # =============================================================================
 
-def test_backtrader_integration_active_flow() -> None:
-    """Verifies end-to-end active transaction processing in a multi-threaded closed loop."""
-    cerebro = bt.Cerebro()
-    bridge = BacktraderBridge()
+def test_backtrader_integration_active_buy_and_hold() -> None:
+    """Scenario 1: Verifies entry execution and continuous flotation holding without bracket interference.
 
-    # Bind the proxy strategy infrastructure to the synchronized bridge
-    cerebro.addstrategy(BacktraderProxyStrategy, bridge=bridge)
+    Asserts that the position remains fully active and un-liquidated across the whole historic trail.
+    """
+    historical_prices = [
+        [datetime(2026, 8, 1, 12, 0), 1.1200, 1.1250, 1.1180, 1.1220, 5000.0, 0.0],
+        [datetime(2026, 8, 1, 12, 1), 1.1220, 1.1260, 1.1210, 1.1240, 5500.0, 0.0],
+        [datetime(2026, 8, 1, 12, 2), 1.1240, 1.1290, 1.1230, 1.1280, 6000.0, 0.0],
+    ]
 
-    # Use our pandas-free memory feed to supply market ticks
-    memory_feed = PureMemoryDataFeed()
-    cerebro.adddata(memory_feed, name='EURUSD')
+    intent = ExposureIntent(alpha_direction=1.0, stop_loss_ticks=1000.0, take_profit_ticks=1000.0)
+    active_bot = ActiveTestBot(exposure_intent=intent)
+    harness = BacktraderTestHarness(bot=active_bot, records=historical_prices, symbol="EURUSD")
+    harness.execute_synchronized_run(timeout=2.0)
 
-    # Instantiate our stateful bot to prevent order spamming
-    active_bot = ActiveStatefulFakeBot(warm_up=0)
-    broker_adapter = BacktraderBrokerAdapter(bridge=bridge)
+    assert len(active_bot.history) == 3
 
-    # Enforce EURUSD specification tracking inside the registry
-    contract_spec = create_contract_specification_factory(symbol='EURUSD')
-    contract_registry = ContractRegistry(specifications={'EURUSD': contract_spec})
+    # Step 1: Order submitted, portfolio flat
+    assert len(active_bot.history[0].position_ledger.records) == 0
 
-    # Setup a working currency converter locked to parity
-    currency_converter = CurrencyConverter()
-    currency_converter.update_rate(pair='EURUSD', rate=Decimal('1.00'))
-    currency_converter.update_rate(pair='USDEUR', rate=Decimal('1.00'))
+    # Step 2: Order filled, position is active and floating
+    assert "EURUSD" in active_bot.history[1].position_ledger.records
 
-    # Instantiate the real position sizer configured natively with the execution policy
-    # demanded by the Backtrader microstructure boundary layer, preventing patching debt.
-    position_sizer = PositionSizer(currency_converter=currency_converter)
+    # Step 3: Continues to hold position cleanly
+    assert "EURUSD" in active_bot.history[2].position_ledger.records
 
-    # Instantiate the complete orchestration layer
-    engine = AegisExecutionEngine(
-        bot=active_bot,
-        broker_adapter=broker_adapter,
-        contract_registry=contract_registry,
-        position_sizer=position_sizer,
+# -----------------------------------------------------------------------------
+
+def test_backtrader_integration_bracket_delayed_stop_loss() -> None:
+    """Scenario 2: Verifies delayed Stop Loss liquidation at the subsequent cycle."""
+    historical_prices = [
+        [datetime(2026, 8, 1, 12, 0), 1.1200, 1.1250, 1.1180, 1.1220, 5000.0, 0.0],
+        # Open 1.1220, Low 1.1210. Survives a 150-tick stop loss at 1.1205 floor.
+        [datetime(2026, 8, 1, 12, 1), 1.1220, 1.1260, 1.1210, 1.1240, 5500.0, 0.0],
+        # Next Bar: Low drops to 1.1100, breaching our 1.1205 protective level.
+        [datetime(2026, 8, 1, 12, 2), 1.1240, 1.1290, 1.1100, 1.1280, 6000.0, 0.0],
+    ]
+
+    intent = ExposureIntent(
+        alpha_direction=1.0, stop_loss_ticks=150.0, take_profit_ticks=1000.0
     )
-    market_feed = BacktraderMarketFeed(bridge=bridge)
+    active_bot = ActiveTestBot(exposure_intent=intent)
+    harness = BacktraderTestHarness(
+        bot=active_bot, records=historical_prices, symbol="EURUSD"
+    )
+    harness.execute_synchronized_run(timeout=2.0)
 
-    def run_backtrader_infrastructure() -> None:
-        """Runs the Cerebro historical execution loop inside the background thread."""
-        cerebro.run()
+    assert len(active_bot.history) == 3
 
-    def run_engine_domain() -> None:
-        """Runs the main Aegis domain execution loop inside the foreground thread."""
-        try:
-            engine.run_execution_cycle(symbol='EURUSD', market_feed=market_feed)
-        except Exception:
-            # Prevent deadlocks by unblocking the synchronization bridges on early failure
-            bridge.stop_simulation()
-            raise
+    # Cycle # 0: Entry order submitted, portfolio flat
+    assert len(active_bot.history[0].position_ledger.records) == 0
 
-    # Enforce background daemon states to protect the environment against test freezes
-    infra_thread = threading.Thread(target=run_backtrader_infrastructure, daemon=True)
-    domain_thread = threading.Thread(target=run_engine_domain, daemon=True)
+    # Cycle # 1: Position survives the first bar and floats actively at 50.0 lots
+    assert "EURUSD" in active_bot.history[1].position_ledger.records
 
-    try:
-        infra_thread.start()
-        domain_thread.start()
+    # Cycle # 2: Next bar low breach triggers liquidation. Ledger returns to flat.
+    assert len(active_bot.history[2].position_ledger.records) == 0
 
-        # Allow sufficient temporal tolerance for threads to execute and exit safely
-        infra_thread.join(timeout=2.0)
-        domain_thread.join(timeout=2.0)
-    finally:
-        # Final safety clear to unlock threads
-        bridge.stop_simulation()
+# -----------------------------------------------------------------------------
 
-    # Assert accurate state alignment upon successful loop exit
-    assert bridge.is_simulation_completed() is True
-    assert not infra_thread.is_alive()
-    assert not domain_thread.is_alive()
+def test_backtrader_integration_bracket_delayed_take_profit() -> None:
+    """Scenario 3: Verifies delayed Take Profit liquidation at the subsequent cycle."""
+    historical_prices = [
+        [datetime(2026, 8, 1, 12, 0), 1.1200, 1.1250, 1.1180, 1.1220, 5000.0, 0.0],
+        # Open 1.1220, High 1.1260. Survives a 500-tick take profit target at 1.1270.
+        [datetime(2026, 8, 1, 12, 1), 1.1220, 1.1260, 1.1210, 1.1240, 5500.0, 0.0],
+        # Next Bar: High stretches to 1.1290, capturing our 1.1270 profit target.
+        [datetime(2026, 8, 1, 12, 2), 1.1240, 1.1290, 1.1230, 1.1280, 6000.0, 0.0],
+    ]
+
+    intent = ExposureIntent(
+        alpha_direction=1.0, stop_loss_ticks=1000.0, take_profit_ticks=500.0
+    )
+    active_bot = ActiveTestBot(exposure_intent=intent)
+    harness = BacktraderTestHarness(
+        bot=active_bot, records=historical_prices, symbol="EURUSD"
+    )
+    harness.execute_synchronized_run(timeout=2.0)
+
+    assert len(active_bot.history) == 3
+
+    # Cycle # 0: Entry order submitted, portfolio flat
+    assert len(active_bot.history[0].position_ledger.records) == 0
+
+    # Cycle # 1: Position survives the first bar and floats actively at 50.0 lots
+    assert "EURUSD" in active_bot.history[1].position_ledger.records
+
+    # Cycle # 2: Next bar high stretch hits the target line -> Liquidated back to flat
+    assert len(active_bot.history[2].position_ledger.records) == 0
 
 # -----------------------------------------------------------------------------
 
 def test_backtrader_integration_passive_flow() -> None:
-    """Verifies end-to-end synchronization mechanics using a pure in-memory data feed."""
-    cerebro = bt.Cerebro()
-    bridge = BacktraderBridge()
+    """Verifies end-to-end synchronization mechanics using real domain components.
 
-    cerebro.addstrategy(BacktraderProxyStrategy, bridge=bridge)
+    Validates that neutral/flat exposure desires safely bypass the transaction routing
+    pipeline without introducing asset ledger or balance baseline mutations.
+    """
+    historical_prices = [
+        [datetime(2026, 8, 1, 12, 0), 1.1200, 1.1250, 1.1180, 1.1220, 5000.0, 0.0],
+        [datetime(2026, 8, 1, 12, 1), 1.1220, 1.1260, 1.1210, 1.1240, 5500.0, 0.0],
+    ]
 
-    memory_feed = PureMemoryDataFeed()
-    cerebro.adddata(memory_feed, name='EURUSD')
-
-    # Allocate the passive bot with an explicit flat intent and a valid warm-up period
-    flat_intent = ExposureIntent(alpha_direction=None, stop_loss_ticks=0.0, take_profit_ticks=0.0)
-    passive_bot = FakeBot(exposure_intent=flat_intent, warm_up=0)
-    broker_adapter = BacktraderBrokerAdapter(bridge=bridge)
-    contract_registry = MagicMock(spec=ContractRegistry)
-    position_sizer = MagicMock(spec=PositionSizer)
-
-    engine = AegisExecutionEngine(
+    passive_bot = TelemetryBot()
+    harness = BacktraderTestHarness(
         bot=passive_bot,
-        broker_adapter=broker_adapter,
-        contract_registry=contract_registry,
-        position_sizer=position_sizer,
+        records=historical_prices,
+        symbol="EURUSD",
+        initial_cash=10000.0
     )
-    market_feed = BacktraderMarketFeed(bridge=bridge)
 
-    def run_backtrader_infrastructure() -> None:
-        """Runs the Cerebro historical engine inside the background thread."""
-        cerebro.run()
+    harness.execute_synchronized_run(timeout=1.0)
 
-    def run_engine_domain() -> None:
-        """Runs the main Aegis processing loop inside the foreground thread."""
-        engine.run_execution_cycle(symbol='EURUSD', market_feed=market_feed)
+    # High-precision metrology: Every captured historical record must remain perfectly neutral
+    assert len(passive_bot.history) == 2
 
-    # Enforce daemon status to ensure threads are killed immediately if pytest aborts
-    infra_thread = threading.Thread(target=run_backtrader_infrastructure, daemon=True)
-    domain_thread = threading.Thread(target=run_engine_domain, daemon=True)
+    assert passive_bot.history[0].exposure_intent.alpha_direction is None
+    assert len(passive_bot.history[0].position_ledger.records) == 0
 
-    try:
-        infra_thread.start()
-        domain_thread.start()
-
-        infra_thread.join(timeout=1.0)
-        domain_thread.join(timeout=1.0)
-    finally:
-        # The bridge now natively guarantees internal thread release on shutdown
-        bridge.stop_simulation()
-
-    assert bridge.is_simulation_completed() is True
-    assert not infra_thread.is_alive()
-    assert not domain_thread.is_alive()
+    assert passive_bot.history[1].exposure_intent.alpha_direction is None
+    assert len(passive_bot.history[1].position_ledger.records) == 0
 
 # =============================================================================
 # -----------------------------------------------------------------------------

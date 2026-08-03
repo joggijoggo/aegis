@@ -20,7 +20,12 @@ from core.models import (
     OrderSide,
     OrderStatus,
     OrderType,
+    PositionSide,
     TimeInForce,
+)
+from tests.testutils import (
+    create_position_factory,
+    create_position_ledger_factory,
 )
 
 # =============================================================================
@@ -190,6 +195,38 @@ def test_order_types_with_limit_bounds() -> None:
     assert isinstance(order.price, Decimal)
     assert isinstance(order.stop_loss_price, Decimal)
     assert isinstance(order.take_profit_price, Decimal)
+
+# -----------------------------------------------------------------------------
+
+def test_position_ledger_filters_records_by_symbol() -> None:
+    """Verifies that get_positions_by_symbol successfully isolates target contracts."""
+    # 1. Forge targeted positions using the factory
+    pos_eurusd_1 = create_position_factory(symbol='EURUSD', ticket_id='TKT-1', side=PositionSide.LONG)
+    pos_eurusd_2 = create_position_factory(symbol='EURUSD', ticket_id='TKT-2', side=PositionSide.SHORT)
+    pos_gbpusd = create_position_factory(symbol='GBPUSD', ticket_id='TKT-3', side=PositionSide.LONG)
+
+    # 2. Build the immutable ledger record dictionary
+    records = {
+        'TKT-1': pos_eurusd_1,
+        'TKT-2': pos_eurusd_2,
+        'TKT-3': pos_gbpusd,
+    }
+    ledger = create_position_ledger_factory(records=records)
+
+    # 3. Execute the domain query utility
+    eurusd_positions = ledger.get_positions_by_symbol('EURUSD')
+    gbpusd_positions = ledger.get_positions_by_symbol('GBPUSD')
+    untraded_positions = ledger.get_positions_by_symbol('USDJPY')
+
+    # 4. Strict assertions backing the non-destructive signal filtering
+    assert len(eurusd_positions) == 2
+    assert pos_eurusd_1 in eurusd_positions
+    assert pos_eurusd_2 in eurusd_positions
+
+    assert len(gbpusd_positions) == 1
+    assert pos_gbpusd in gbpusd_positions
+
+    assert len(untraded_positions) == 0
 
 # =============================================================================
 # -----------------------------------------------------------------------------

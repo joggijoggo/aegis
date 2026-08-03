@@ -42,6 +42,13 @@ class OrderType(Enum):
 
 # -----------------------------------------------------------------------------
 
+class PositionSide(Enum):
+    """Direction of an active financial exposure open on the market."""
+    LONG = 'LONG'
+    SHORT = 'SHORT'
+
+# -----------------------------------------------------------------------------
+
 class TimeInForce(Enum):
     """Enforces execution expiration boundaries across broker gateways."""
     DAY = 'DAY'
