@@ -4,7 +4,10 @@ Provides the infrastructure adapter to interface with the Backtrader broker comp
 """
 
 from decimal import Decimal
-from typing import Any
+from typing import (
+    Any,
+    Tuple,
+)
 
 import backtrader as bt
 
@@ -67,6 +70,56 @@ class BacktraderBrokerAdapter(BaseBrokerAdapter):
         """
         self._bridge = bridge
         self._broker_queue = bridge.get_broker_queue()
+
+# -----------------------------------------------------------------------------
+
+    def _compute_portfolio_metrics(self, strategy: bt.Strategy) -> Tuple[Decimal, Decimal]:
+        """Iterates over active positions to extract true locked margin and spot acquisition costs.
+
+        Strictly aligned with the behavioral overrides of Backtrader v1.9.78.123.
+
+        Args:
+            strategy: The active runtime Backtrader strategy instance.
+
+        Returns:
+            A tuple containing the total locked margin and total spot acquisition cost.
+        """
+        total_locked_margin = Decimal("0.0")
+        total_spot_acquisition_cost = Decimal("0.0")
+
+        # Dynamically retrieve the underlying broker engine from the active strategy instance
+        broker: bt.Broker = strategy.broker
+
+        for data, position in strategy.positions.items():
+            if position.size == 0:
+                continue
+
+            comminfo = broker.getcommissioninfo(data)
+            is_stocklike = getattr(comminfo, '_stocklike', False) or getattr(comminfo.p, 'stocklike', False)
+
+            # Law 4: Leverage collateral requirement remains anchored to historical entry cost level
+            margin_per_unit = comminfo.get_margin(position.price)
+
+            # String-based decimal transformation pipeline to eradicate mantissa drift
+            abs_size = Decimal(str(abs(float(position.size))))
+            entry_price = Decimal(str(position.price))
+
+            # Regime 1: Authentic Future contract (stocklike=False)
+            if not is_stocklike:
+                if margin_per_unit is not None:
+                    total_locked_margin += abs_size * Decimal(str(margin_per_unit))
+
+            # Regime 4: Authentic Forex Gearing Leverage (stocklike=True + active automargin or leverage > 1)
+            elif getattr(comminfo.p, 'automargin', False) or getattr(comminfo.p, 'leverage', 1.0) > 1.0:
+                if margin_per_unit is not None:
+                    total_locked_margin += abs_size * Decimal(str(margin_per_unit))
+
+            # Regime 2 & 3: Spot Stock Cash OR Forex Fixed Margin (Overridden into spot cash mechanics)
+            else:
+                # Law 3: stocklike=True silently nullifies margin params, enforcing full cash depletion
+                total_spot_acquisition_cost += abs_size * entry_price
+
+        return total_locked_margin, total_spot_acquisition_cost
 
 # -----------------------------------------------------------------------------
 
@@ -247,55 +300,30 @@ class BacktraderBrokerAdapter(BaseBrokerAdapter):
     def get_account_snapshot(self) -> AccountSnapshot:
         """Returns the current financial state of the account.
 
-        Returns:
-            The account metrics snapshot.
-        """
-        strategy = self._bridge.strategy
-        broker = strategy.broker
+        Reconstructs the true portfolio core balance by resolving the multi-asset
+        invariant equation matrix.
 
+        Returns:
+            The normalized, decimal-validated AccountSnapshot domain record.
+        """
+        strategy: bt.Strategy = self._bridge.strategy
+        broker: bt.Broker = strategy.broker
+
+        # Law 1: Backtrader's cash ledger represents strictly the residual available free margin
         raw_balance = float(broker.get_cash())
         raw_equity = float(broker.get_value())
 
-        balance = Decimal(str(raw_balance))
+        available_margin = Decimal(str(raw_balance))
         equity = Decimal(str(raw_equity))
-        locked_margin = Decimal("0.0")
 
-        # Iterate over Backtrader's active positions to query its native margin engine
-        for data, position in strategy.positions.items():
-            if position.size == 0:
-                continue
+        # Specialized SRP routine invocation tracking active contract matrix boundaries
+        locked_margin, spot_acquisition_cost = self._compute_portfolio_metrics(strategy=strategy)
 
-            symbol = str(data._name)
-            comminfo = broker.getcommissioninfo(data)
-            margin_per_unit = comminfo.get_margin(position.price)
-
-            if margin_per_unit is None:
-                is_stocklike = getattr(comminfo, '_stocklike', False)
-
-                # Hard enforcement: If the broker treats the asset as stocklike (margin=None)
-                # but the order tracking environment has no explicit commission info applied,
-                # we must check if this matches our structural testing bounds.
-                # To prevent silent margin calculation bypass, we explicitly raise if the
-                # asset's underlying params mapping reflects an uninitialized default environment.
-                if is_stocklike and comminfo.p.commission == 0.0 and comminfo.p.mult == 1.0:
-                    raise BrokerConfigurationError(
-                        f"Microstructural Misconfiguration Detected: Asset '{symbol}' "
-                        f"is running under an uninitialized default Backtrader CommissionInfo scheme. "
-                        f"Define margin or leverage bounds using setcommission."
-                    )
-
-                margin_per_unit = 0.0
-
-            # Total locked margin = absolute size * margin required per unit
-            raw_position_margin = abs(float(position.size)) * margin_per_unit
-            locked_margin += Decimal(str(raw_position_margin))
-
-        # Backtrader evaluates order acceptance against available liquid cash boundaries.
-        # Thus, available margin must be anchored to balance, not floating equity.
-        available_margin = balance - locked_margin
+        # Resolution of the Invariant Universal Accounting Equation Matrix
+        balance = available_margin + locked_margin + spot_acquisition_cost
 
         return AccountSnapshot(
-            currency="USD",  # TODO: extract dynamically from environment
+            currency="USD",
             balance=balance,
             equity=equity,
             available_margin=available_margin,
