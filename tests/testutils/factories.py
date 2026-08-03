@@ -1,8 +1,10 @@
 """Aegis Framework - Domain Model Testing Factories."""
 
 from decimal import Decimal
+from typing import Any
 import uuid
 
+from core.currency_converter import CurrencyConverter
 from core.models import (
     AccountSnapshot,
     ContractSpecification,
@@ -18,6 +20,7 @@ from core.models.market import (
     MarketContext,
     MarketPricePoint,
 )
+from core.position_sizer import PositionSizer
 from tests.testutils.constants import (
     BASE_TIMESTAMP,
     DEFAULT_ASSET_CURRENCY,
@@ -67,6 +70,22 @@ def create_contract_specification_factory(**kwargs) -> ContractSpecification:
     }
     defaults.update(kwargs)
     return ContractSpecification(**defaults)
+
+# -----------------------------------------------------------------------------
+
+def create_currency_converter_factory(**kwargs: Any) -> CurrencyConverter:
+    """Generates a CurrencyConverter instance with dynamic rate overrides."""
+    defaults = {
+        'EURUSD': Decimal('1.00'),
+        'USDEUR': Decimal('1.00'),
+    }
+    defaults.update(kwargs)
+
+    converter = CurrencyConverter()
+    for pair, rate in defaults.items():
+        converter.update_rate(pair=pair, rate=rate)
+
+    return converter
 
 # -----------------------------------------------------------------------------
 
@@ -134,6 +153,16 @@ def create_position_ledger_factory(**kwargs) -> PositionLedger:
     }
     defaults.update(kwargs)
     return PositionLedger(**defaults)
+
+# -----------------------------------------------------------------------------
+
+def create_position_sizer_factory(**kwargs: Any) -> PositionSizer:
+    """Generates a PositionSizer instance with dynamic converter overrides."""
+    defaults = {
+        'currency_converter': create_currency_converter_factory(),
+    }
+    defaults.update(kwargs)
+    return PositionSizer(**defaults)
 
 # =============================================================================
 # -----------------------------------------------------------------------------
