@@ -81,19 +81,19 @@ class FakeBrokerAdapter(BaseBrokerAdapter):
 
 # -----------------------------------------------------------------------------
 
+    def _get_account_snapshot(self) -> AccountSnapshot:
+        """Gets the current trading account snapshot."""
+        return self._account_snapshot
+
+# -----------------------------------------------------------------------------
+
     def get_broker_snapshot(self) -> BrokerSnapshot:
         """Retrieves the unified temporal snapshot of account metrics and exposures."""
         self.snapshot_call_count += 1 # Increment the atomic verification tracker.
         return BrokerSnapshot(
-            account=self.get_account_snapshot(),
+            account=self._get_account_snapshot(),
             position_ledger=self.get_position_ledger(),
         )
-
-# -----------------------------------------------------------------------------
-
-    def get_account_snapshot(self) -> AccountSnapshot:
-        """Gets the current trading account snapshot."""
-        return self._account_snapshot
 
 # -----------------------------------------------------------------------------
 

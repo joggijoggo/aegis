@@ -47,7 +47,7 @@ def test_backtrader_broker_adapter_account_snapshot() -> None:
     mock_bridge.strategy = mock_strategy
 
     adapter = BacktraderBrokerAdapter(bridge=mock_bridge)
-    snapshot = adapter.get_account_snapshot()
+    snapshot = adapter._get_account_snapshot()
 
     assert isinstance(snapshot, AccountSnapshot)
     assert snapshot.currency == 'USD'

@@ -145,17 +145,16 @@ class TelemetryBot(BaseBot):
                 "Ensure set_broker_adapter() is invoked before starting the simulation loop."
             )
 
-        account_snapshot = self._adapter.get_account_snapshot()
-        position_ledger = self._adapter.get_position_ledger()
+        broker_snapshot = self._adapter.get_broker_snapshot()
 
         exposure_intent = self._evaluate(market_context, historical_values)
 
         self.history.append(
             DomainTelemetryRecord(
-                account_snapshot=account_snapshot,
+                account_snapshot=broker_snapshot.account,
                 exposure_intent=exposure_intent,
                 market_context=market_context,
-                position_ledger=position_ledger
+                position_ledger=broker_snapshot.position_ledger,
             )
         )
         return exposure_intent

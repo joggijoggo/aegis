@@ -124,6 +124,40 @@ class BacktraderBrokerAdapter(BaseBrokerAdapter):
 
 # -----------------------------------------------------------------------------
 
+    def _get_account_snapshot(self) -> AccountSnapshot:
+        """Returns the current financial state of the account.
+
+        Reconstructs the true portfolio core balance by resolving the multi-asset
+        invariant equation matrix.
+
+        Returns:
+            The normalized, decimal-validated AccountSnapshot domain record.
+        """
+        strategy: bt.Strategy = self._bridge.strategy
+        broker: bt.Broker = strategy.broker
+
+        # Law 1: Backtrader's cash ledger represents strictly the residual available free margin
+        raw_balance = float(broker.get_cash())
+        raw_equity = float(broker.get_value())
+
+        available_margin = Decimal(str(raw_balance))
+        equity = Decimal(str(raw_equity))
+
+        # Specialized SRP routine invocation tracking active contract matrix boundaries
+        locked_margin, spot_acquisition_cost = self._compute_portfolio_metrics(strategy=strategy)
+
+        # Resolution of the Invariant Universal Accounting Equation Matrix
+        balance = available_margin + locked_margin + spot_acquisition_cost
+
+        return AccountSnapshot(
+            currency="USD",
+            balance=balance,
+            equity=equity,
+            available_margin=available_margin,
+        )
+
+# -----------------------------------------------------------------------------
+
     def _parse_order_status(self, raw_status: int) -> OrderStatus:
         """Maps Backtrader infrastructure order statuses to core domain enums.
 
@@ -301,42 +335,8 @@ class BacktraderBrokerAdapter(BaseBrokerAdapter):
     def get_broker_snapshot(self) -> BrokerSnapshot:
         """Retrieves the unified temporal snapshot of account metrics and market exposures."""
         return BrokerSnapshot(
-            account=self.get_account_snapshot(),
+            account=self._get_account_snapshot(),
             position_ledger=self.get_position_ledger(),
-        )
-
-# -----------------------------------------------------------------------------
-
-    def get_account_snapshot(self) -> AccountSnapshot:
-        """Returns the current financial state of the account.
-
-        Reconstructs the true portfolio core balance by resolving the multi-asset
-        invariant equation matrix.
-
-        Returns:
-            The normalized, decimal-validated AccountSnapshot domain record.
-        """
-        strategy: bt.Strategy = self._bridge.strategy
-        broker: bt.Broker = strategy.broker
-
-        # Law 1: Backtrader's cash ledger represents strictly the residual available free margin
-        raw_balance = float(broker.get_cash())
-        raw_equity = float(broker.get_value())
-
-        available_margin = Decimal(str(raw_balance))
-        equity = Decimal(str(raw_equity))
-
-        # Specialized SRP routine invocation tracking active contract matrix boundaries
-        locked_margin, spot_acquisition_cost = self._compute_portfolio_metrics(strategy=strategy)
-
-        # Resolution of the Invariant Universal Accounting Equation Matrix
-        balance = available_margin + locked_margin + spot_acquisition_cost
-
-        return AccountSnapshot(
-            currency="USD",
-            balance=balance,
-            equity=equity,
-            available_margin=available_margin,
         )
 
 # -----------------------------------------------------------------------------

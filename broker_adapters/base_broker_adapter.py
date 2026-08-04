@@ -27,18 +27,7 @@ class BaseBrokerAdapter(ABC):
 # -----------------------------------------------------------------------------
 
     @abstractmethod
-    def get_broker_snapshot(self) -> BrokerSnapshot:
-        """Retrieves the unified temporal snapshot of account metrics and market exposures.
-
-        Returns:
-            A frozen BrokerSnapshot containing account and ledger snapshots.
-        """
-        pass
-
-# -----------------------------------------------------------------------------
-
-    @abstractmethod
-    def get_account_snapshot(self) -> AccountSnapshot:
+    def _get_account_snapshot(self) -> AccountSnapshot:
         """Gets the current account snapshot.
 
         Returns:
@@ -46,6 +35,17 @@ class BaseBrokerAdapter(ABC):
 
         Raises:
             BrokerConnectionError: Broker connection failure.
+        """
+        pass
+
+# -----------------------------------------------------------------------------
+
+    @abstractmethod
+    def get_broker_snapshot(self) -> BrokerSnapshot:
+        """Retrieves the unified temporal snapshot of account metrics and market exposures.
+
+        Returns:
+            A frozen BrokerSnapshot containing account and ledger snapshots.
         """
         pass
 
