@@ -1,14 +1,15 @@
-"""Aegis Framework - Transactional Execution Specifications.
+"""Aegis Framework - Trading Operational Models.
 
-Defines immutable multi-asset trade requests, receipt confirmations, and historical
-order update records.
+Handles and tracks transactional execution lifecycle records.
 """
 
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
+from typing import Any
 
-from core.models import (
+from core.models.enums import (
+    EventType,
     OrderSide,
     OrderStatus,
     OrderType,
@@ -18,6 +19,32 @@ from core.models import (
 # =============================================================================
 # -----------------------------------------------------------------------------
 # =============================================================================
+
+@dataclass(frozen=True)
+class BrokerEvent:
+    """Immutable record capturing broker notifications."""
+    event_type: EventType
+    payload: Any
+
+# -----------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class ExposureIntent:
+    """Immutable data record capturing passive execution desires.
+
+    Attributes:
+        alpha_direction: The continuous trend conviction scalar bounded strictly
+            between -1.0 and 1.0. A value of 0.0 explicitly enforces a flat position
+            and triggers a portfolio liquidation. A value of None indicates no active
+            opinion, instructing the engine to maintain ongoing exposures.
+        stop_loss_ticks: The protective exit distance measured in ticks.
+        take_profit_ticks: The target take-profit distance measured in ticks.
+    """
+    alpha_direction: float | None = None
+    stop_loss_ticks: float = 0.0
+    take_profit_ticks: float = 0.0
+
+# -----------------------------------------------------------------------------
 
 @dataclass(frozen=True)
 class Order:
@@ -64,6 +91,21 @@ class OrderReceipt:
     status: OrderStatus
     average_execution_price: Decimal | None = None
     reject_reason: str | None = None
+
+# -----------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class RegimeConfidenceVector:
+    """Stores statistical confidence metrics computed by math classifiers.
+
+    Attributes:
+        mean_reversion: Probability weight assigned to cyclic behaviors.
+        trending: Probability weight assigned to directional patterns.
+        noise: Probability weight assigned to non-exploitable random dynamics.
+    """
+    mean_reversion: float
+    trending: float
+    noise: float
 
 # =============================================================================
 # -----------------------------------------------------------------------------

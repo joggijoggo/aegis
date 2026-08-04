@@ -1,6 +1,6 @@
-"""Aegis Framework - Position Domain Model.
+"""Aegis Framework - Account Valuation Models.
 
-Defines the core immutable data structures representing active market risk exposures.
+Manages accounting metrics and immutable active risk exposure states.
 """
 
 from dataclasses import dataclass
@@ -13,6 +13,24 @@ from core.models.enums import PositionSide
 # =============================================================================
 # -----------------------------------------------------------------------------
 # =============================================================================
+
+@dataclass(frozen=True)
+class AccountSnapshot:
+    """Financial metrics of the trading account.
+
+    Attributes:
+        currency: Base denomination currency unit of the trading
+            account ledger (e.g., "EUR").
+        balance: Account cash excluding open positions.
+        equity: Account cash including unrealized profits and losses.
+        available_margin: Account cash excluding locked position margin.
+    """
+    currency: str
+    balance: Decimal
+    equity: Decimal
+    available_margin: Decimal
+
+# -----------------------------------------------------------------------------
 
 @dataclass(frozen=True)
 class Position:
@@ -31,9 +49,7 @@ class Position:
     quantity: Decimal
     entry_price: Decimal
 
-# =============================================================================
 # -----------------------------------------------------------------------------
-# =============================================================================
 
 @dataclass(frozen=True)
 class PositionLedger:
