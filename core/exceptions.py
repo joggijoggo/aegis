@@ -29,6 +29,11 @@ class ContractVolumeUnderflowError(AegisError):
 
 # -----------------------------------------------------------------------------
 
+class DuplicateOrderGroupError(AegisError):
+    """The execution engine attempted to register an already existing order group identifier."""
+
+# -----------------------------------------------------------------------------
+
 class MarketTimeoutError(AegisError):
     """Feed timeout expiration."""
 

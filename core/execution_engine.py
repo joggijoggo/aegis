@@ -4,20 +4,26 @@ Orchestrates execution cycles by consuming market feeds, driving strategy bot
 evaluations, and routing risk-sized orders to the broker gateway.
 """
 
+from dataclasses import replace
 from decimal import Decimal
 
 from bots.base_bot import BaseBot
 from broker_adapters.base_broker_adapter import BaseBrokerAdapter
 from core.caching import HistoricalBuffer
 from core.contract_registry import ContractRegistry
-from core.exceptions import UnsupportedBrokerEventError
+from core.exceptions import (
+    DuplicateOrderGroupError,
+    UnsupportedBrokerEventError,
+)
 from core.models import (
     BrokerEvent,
     EventType,
     Order,
     OrderGroup,
     OrderReceipt,
+    OrderSide,
     OrderStatus,
+    OrderType,
 )
 from core.position_sizer import PositionSizer
 from market_feeds.base_market_feed import BaseMarketFeed
@@ -109,13 +115,54 @@ class AegisExecutionEngine:
 # -----------------------------------------------------------------------------
 
     def _register_order_group(self, order: Order) -> None:
-        """Instantiates and registers a new tracking group."""
-        order_group = OrderGroup(
+        """Instantiates and registers a new tracking group before broker submission.
+
+        Args:
+            order: The parent execution order request containing bracket parameters.
+
+        Raises:
+            DuplicateOrderGroupError: If the group identifier already exists in memory.
+        """
+        if order.client_order_id in self._order_groups:
+            raise DuplicateOrderGroupError(
+                f'Collision detected: group {order.client_order_id} already exists'
+            )
+
+        child_side = OrderSide.SELL if order.side == OrderSide.BUY else OrderSide.BUY
+        child_base = replace(
+            order,
+            side=child_side,
+            stop_loss_price=None,
+            take_profit_price=None,
+        )
+
+        group_orders: dict[str, Order] = {
+            order.client_order_id: order,
+        }
+
+        if order.stop_loss_price is not None:
+            sl_id = f'{order.client_order_id}-SL'
+            group_orders[sl_id] = replace(
+                child_base,
+                client_order_id=sl_id,
+                order_type=OrderType.STOP,
+                price=order.stop_loss_price,
+            )
+
+        if order.take_profit_price is not None:
+            tp_id = f'{order.client_order_id}-TP'
+            group_orders[tp_id] = replace(
+                child_base,
+                client_order_id=tp_id,
+                order_type=OrderType.LIMIT,
+                price=order.take_profit_price,
+            )
+
+        self._order_groups[order.client_order_id] = OrderGroup(
             group_id=order.client_order_id,
-            orders={order.client_order_id: order},
+            orders=group_orders,
             status=OrderStatus.PENDING,
         )
-        self._order_groups[order.client_order_id] = order_group
 
 # -----------------------------------------------------------------------------
 

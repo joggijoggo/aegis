@@ -39,6 +39,7 @@ class OrderType(Enum):
     """Enforces structural routing parameter limitations for orders executions."""
     MARKET = 'MARKET'
     LIMIT = 'LIMIT'
+    STOP = 'STOP'
 
 # -----------------------------------------------------------------------------
 

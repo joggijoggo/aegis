@@ -10,7 +10,10 @@ from unittest.mock import MagicMock
 import pytest
 
 from core.contract_registry import ContractRegistry
-from core.exceptions import UnsupportedBrokerEventError
+from core.exceptions import (
+    DuplicateOrderGroupError,
+    UnsupportedBrokerEventError,
+)
 from core.execution_engine import AegisExecutionEngine
 from core.models import (
     BrokerEvent,
@@ -244,6 +247,30 @@ def test_engine_handles_unsupported_broker_event_error() -> None:
 
 # -----------------------------------------------------------------------------
 
+def test_engine_raises_duplicate_order_group_error_on_collision() -> None:
+    """Ensures that registering an existing group ID triggers an immediate halt."""
+    bot = FakeBot()
+    broker = FakeBrokerAdapter()
+    registry = ContractRegistry(specifications={})
+    sizer = create_position_sizer_factory()
+
+    engine = AegisExecutionEngine(
+        bot=bot,
+        broker_adapter=broker,
+        contract_registry=registry,
+        position_sizer=sizer,
+    )
+
+    # Pre-populate the volatile memory with a pre-existing group entry
+    existing_order = create_order_factory()
+    engine._register_order_group(existing_order)
+
+    # Attempt to register the exact same order structure again to trigger collision
+    with pytest.raises(DuplicateOrderGroupError):
+        engine._register_order_group(existing_order)
+
+# -----------------------------------------------------------------------------
+
 def test_engine_reconciles_order_lifecycle_and_evicts_group() -> None:
     """Ensures order receipts mutate volatile tracking records and clean RAM."""
     bot = FakeBot()
@@ -287,6 +314,95 @@ def test_engine_reconciles_order_lifecycle_and_evicts_group() -> None:
 
     # Assert binary eviction rule successfully cleared the record from memory
     assert len(engine._order_groups) == 0
+
+# -----------------------------------------------------------------------------
+
+def test_engine_register_order_group_unpacking_variants() -> None:
+    """Verifies that order unpacking accurately maps variants of child brackets."""
+    bot = FakeBot()
+    broker = FakeBrokerAdapter()
+    registry = ContractRegistry(specifications={})
+    sizer = create_position_sizer_factory()
+
+    # --- Scenario 1: Parent with full bracket protections (Nominal case) ---
+    engine_full = AegisExecutionEngine(
+        bot=bot,
+        broker_adapter=broker,
+        contract_registry=registry,
+        position_sizer=sizer,
+    )
+    order_full = create_order_factory(
+        client_order_id='ORD-FULL',
+        stop_loss_price=Decimal('1.08000'),
+        take_profit_price=Decimal('1.09500'),
+    )
+    engine_full._register_order_group(order_full)
+    group_full = engine_full._order_groups['ORD-FULL']
+
+    assert len(group_full.orders) == 3
+    assert 'ORD-FULL' in group_full.orders
+    assert 'ORD-FULL-SL' in group_full.orders
+    assert 'ORD-FULL-TP' in group_full.orders
+
+    # --- Scenario 2: Parent with Stop-Loss only ---
+    engine_sl_only = AegisExecutionEngine(
+        bot=bot,
+        broker_adapter=broker,
+        contract_registry=registry,
+        position_sizer=sizer,
+    )
+    order_sl_only = create_order_factory(
+        client_order_id='ORD-SL-ONLY',
+        stop_loss_price=Decimal('1.08000'),
+        take_profit_price=None,
+    )
+    engine_sl_only._register_order_group(order_sl_only)
+    group_sl = engine_sl_only._order_groups['ORD-SL-ONLY']
+
+    assert len(group_sl.orders) == 2
+    assert 'ORD-SL-ONLY' in group_sl.orders
+    assert 'ORD-SL-ONLY-SL' in group_sl.orders
+    assert 'ORD-SL-ONLY-TP' not in group_sl.orders
+
+    # --- Scenario 3: Parent with Take-Profit only (Asymmetric Risk Spec) ---
+    engine_tp_only = AegisExecutionEngine(
+        bot=bot,
+        broker_adapter=broker,
+        contract_registry=registry,
+        position_sizer=sizer,
+    )
+    order_tp_only = create_order_factory(
+        client_order_id='ORD-TP-ONLY',
+        stop_loss_price=None,
+        take_profit_price=Decimal('1.09500'),
+    )
+    engine_tp_only._register_order_group(order_tp_only)
+    group_tp = engine_tp_only._order_groups['ORD-TP-ONLY']
+
+    assert len(group_tp.orders) == 2
+    assert 'ORD-TP-ONLY' in group_tp.orders
+    assert 'ORD-TP-ONLY-SL' not in group_tp.orders
+    assert 'ORD-TP-ONLY-TP' in group_tp.orders
+
+    # --- Scenario 4: Parent with no protections at all (Bare execution) ---
+    engine_bare = AegisExecutionEngine(
+        bot=bot,
+        broker_adapter=broker,
+        contract_registry=registry,
+        position_sizer=sizer,
+    )
+    order_bare = create_order_factory(
+        client_order_id='ORD-BARE',
+        stop_loss_price=None,
+        take_profit_price=None,
+    )
+    engine_bare._register_order_group(order_bare)
+    group_bare = engine_bare._order_groups['ORD-BARE']
+
+    assert len(group_bare.orders) == 1
+    assert 'ORD-BARE' in group_bare.orders
+    assert 'ORD-BARE-SL' not in group_bare.orders
+    assert 'ORD-BARE-TP' not in group_bare.orders
 
 # =============================================================================
 # -----------------------------------------------------------------------------
