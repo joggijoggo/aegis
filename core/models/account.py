@@ -64,8 +64,6 @@ class PositionLedger:
         """Enforces a read-only proxy view over the records dictionary."""
         object.__setattr__(self, 'records', MappingProxyType(dict(self.records)))
 
-# -----------------------------------------------------------------------------
-
     def get_positions_by_symbol(self, symbol: str) -> list[Position]:
         """Filters and retrieves all active positions allocated to a specific asset.
 
@@ -76,6 +74,19 @@ class PositionLedger:
             Sequence of active positions open for the requested asset.
         """
         return [p for p in self.records.values() if p.symbol == symbol]
+
+# -----------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class BrokerSnapshot:
+    """Unified temporal transaction container mapping portfolio layers.
+
+    Attributes:
+        account: The frozen financial capital metrics snapshot.
+        position_ledger: The frozen registry tracking active market exposures.
+    """
+    account: AccountSnapshot
+    position_ledger: PositionLedger
 
 # =============================================================================
 # -----------------------------------------------------------------------------

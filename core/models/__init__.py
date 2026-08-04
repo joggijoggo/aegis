@@ -1,6 +1,7 @@
 """Aegis Framework - Unified Domain Model Facade."""
 
 from core.models.account import AccountSnapshot as AccountSnapshot
+from core.models.account import BrokerSnapshot as BrokerSnapshot
 from core.models.account import Position as Position
 from core.models.account import PositionLedger as PositionLedger
 from core.models.enums import EventType as EventType

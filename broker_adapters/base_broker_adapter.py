@@ -12,6 +12,7 @@ from abc import (
 from core.models import (
     AccountSnapshot,
     BrokerEvent,
+    BrokerSnapshot,
     Order,
     PositionLedger,
 )
@@ -22,6 +23,17 @@ from core.models import (
 
 class BaseBrokerAdapter(ABC):
     """Interface for broker interactions."""
+
+# -----------------------------------------------------------------------------
+
+    @abstractmethod
+    def get_broker_snapshot(self) -> BrokerSnapshot:
+        """Retrieves the unified temporal snapshot of account metrics and market exposures.
+
+        Returns:
+            A frozen BrokerSnapshot containing account and ledger snapshots.
+        """
+        pass
 
 # -----------------------------------------------------------------------------
 

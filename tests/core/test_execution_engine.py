@@ -61,6 +61,9 @@ def test_execution_engine_broker_event_flushing() -> None:
     engine._process_broker_event.assert_called_once_with(fake_event)
     assert adapter.has_pending_events() is False
 
+    # Assert that the atomic temporal snapshot was pulled exactly once during the cycle
+    assert adapter.snapshot_call_count == 1
+
 # -----------------------------------------------------------------------------
 
 def test_engine_cycle_executes_order_on_valid_intent(

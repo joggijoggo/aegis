@@ -8,6 +8,7 @@ from broker_adapters.base_broker_adapter import BaseBrokerAdapter
 from core.models import (
     AccountSnapshot,
     BrokerEvent,
+    BrokerSnapshot,
     EventType,
     ExposureIntent,
     MarketContext,
@@ -73,9 +74,20 @@ class FakeBrokerAdapter(BaseBrokerAdapter):
     ):
         """Initializes the fake broker gateway with a static ledger snapshot."""
         self.submitted_orders: list[Order] = []
+        self.snapshot_call_count = 0  # Call counter for execution verification
         self._account_snapshot = account_snapshot or create_account_snapshot_factory()
         self._position_ledger = position_ledger or create_position_ledger_factory()
         self._pending_events: Queue = Queue()
+
+# -----------------------------------------------------------------------------
+
+    def get_broker_snapshot(self) -> BrokerSnapshot:
+        """Retrieves the unified temporal snapshot of account metrics and exposures."""
+        self.snapshot_call_count += 1 # Increment the atomic verification tracker.
+        return BrokerSnapshot(
+            account=self.get_account_snapshot(),
+            position_ledger=self.get_position_ledger(),
+        )
 
 # -----------------------------------------------------------------------------
 

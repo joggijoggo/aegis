@@ -17,6 +17,7 @@ from core.exceptions import AegisError
 from core.models import (
     AccountSnapshot,
     BrokerEvent,
+    BrokerSnapshot,
     EventType,
     Order,
     OrderSide,
@@ -293,6 +294,15 @@ class BacktraderBrokerAdapter(BaseBrokerAdapter):
         return BrokerEvent(
             event_type=event_type,
             payload=payload,
+        )
+
+# -----------------------------------------------------------------------------
+
+    def get_broker_snapshot(self) -> BrokerSnapshot:
+        """Retrieves the unified temporal snapshot of account metrics and market exposures."""
+        return BrokerSnapshot(
+            account=self.get_account_snapshot(),
+            position_ledger=self.get_position_ledger(),
         )
 
 # -----------------------------------------------------------------------------
