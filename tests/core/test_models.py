@@ -108,65 +108,20 @@ def test_order_immutability() -> None:
 
 # -----------------------------------------------------------------------------
 
-def test_order_receipt_default_parameters() -> None:
-    """Verifies OrderReceipt optional fields resolve to None by default."""
-    receipt = OrderReceipt(
-        broker_order_id=None,
-        client_order_id="ORD-123",
-        status=OrderStatus.REJECTED,
-    )
-
-    assert receipt.average_execution_price is None
-    assert receipt.reject_reason is None
-
-# -----------------------------------------------------------------------------
-
 def test_order_receipt_immutability() -> None:
     """Verifies OrderReceipt raises FrozenInstanceError upon modification."""
     receipt = OrderReceipt(
-        broker_order_id="BRK-999",
-        client_order_id="ORD-123",
+        average_execution_price=None,
+        broker_order_id='BRK-999',
+        client_order_id='ORD-123',
+        executed_quantity=Decimal('1.0'),
+        group_id='AEGIS-TEST-ID',
+        reject_reason=None,
         status=OrderStatus.PENDING,
     )
 
     with pytest.raises(FrozenInstanceError):
         receipt.status = OrderStatus.FILLED  # type: ignore
-
-# -----------------------------------------------------------------------------
-
-def test_order_receipt_types_on_filled() -> None:
-    """Verifies OrderReceipt fields for a successful market execution."""
-    receipt = OrderReceipt(
-        broker_order_id="BRK-999",
-        client_order_id="ORD-123",
-        status=OrderStatus.FILLED,
-        average_execution_price=Decimal("1.0850"),
-        reject_reason=None,
-    )
-
-    assert isinstance(receipt.broker_order_id, str)
-    assert isinstance(receipt.client_order_id, str)
-    assert isinstance(receipt.status, OrderStatus)
-    assert isinstance(receipt.average_execution_price, Decimal)
-    assert receipt.reject_reason is None
-
-# -----------------------------------------------------------------------------
-
-def test_order_receipt_types_on_rejected() -> None:
-    """Verifies OrderReceipt fields for an instant broker rejection."""
-    receipt = OrderReceipt(
-        broker_order_id=None,
-        client_order_id="ORD-123",
-        status=OrderStatus.REJECTED,
-        average_execution_price=None,
-        reject_reason="Insufficient Margin",
-    )
-
-    assert receipt.broker_order_id is None
-    assert isinstance(receipt.client_order_id, str)
-    assert isinstance(receipt.status, OrderStatus)
-    assert receipt.average_execution_price is None
-    assert isinstance(receipt.reject_reason, str)
 
 # -----------------------------------------------------------------------------
 

@@ -20,6 +20,7 @@ from core.models import (
     BrokerSnapshot,
     EventType,
     Order,
+    OrderReceipt,
     OrderSide,
     OrderStatus,
     OrderType,
@@ -342,15 +343,18 @@ class BacktraderBrokerAdapter(BaseBrokerAdapter):
         Returns:
             The translated broker event record containing validated decimal payloads.
         """
-        payload: dict[str, Any] = {}
+        payload: OrderReceipt | dict[str, Any] = {}
 
         if event_type == EventType.ORDER_NOTIFICATION:
             raw_order: bt.Order = raw_data
 
-            # Extract and clean client_order_id from trailing bracket suffixes
-            client_id = getattr(raw_order, 'client_order_id', '') or ''
-            if client_id.endswith('-SL') or client_id.endswith('-TP'):
-                client_id = client_id[:-3]
+            # Preserving the raw id to know exactly which child bracket is hit
+            raw_client_id = getattr(raw_order, 'client_order_id', '') or ''
+
+            # Extract and clean group_id from trailing bracket suffixes
+            group_id = raw_client_id
+            if group_id.endswith('-SL') or group_id.endswith('-TP'):
+                group_id = group_id[:-3]
 
             status = self._parse_order_status(raw_order.status)
 
@@ -358,13 +362,16 @@ class BacktraderBrokerAdapter(BaseBrokerAdapter):
             executed_size = Decimal(str(float(raw_order.executed.size)))
             executed_price = Decimal(str(float(raw_order.executed.price)))
 
-            payload = {
-                'broker_order_id': str(raw_order.ref),
-                'client_order_id': client_id,
-                'executed_quantity': executed_size,
-                'execution_price': executed_price,
-                'status': status,
-            }
+            # Instantiate a real domain record instead of a raw dictionary
+            payload = OrderReceipt(
+                average_execution_price=executed_price,
+                broker_order_id=str(raw_order.ref),
+                client_order_id=raw_client_id,
+                executed_quantity=executed_size,
+                group_id=group_id,
+                reject_reason=None,
+                status=status,
+            )
         elif event_type == EventType.TRADE_NOTIFICATION:
             raw_trade: bt.Trade = raw_data
 

@@ -42,6 +42,11 @@ class MissingExchangeRateError(AegisError):
 class StrategyError(AegisError):
     """Exception for strategy and signal calculation anomalies."""
 
+# -----------------------------------------------------------------------------
+
+class UnsupportedBrokerEventError(AegisError):
+    """The received infrastructure event category is not supported by the execution engine."""
+
 # =============================================================================
 # -----------------------------------------------------------------------------
 # =============================================================================

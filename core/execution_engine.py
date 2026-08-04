@@ -10,10 +10,13 @@ from bots.base_bot import BaseBot
 from broker_adapters.base_broker_adapter import BaseBrokerAdapter
 from core.caching import HistoricalBuffer
 from core.contract_registry import ContractRegistry
+from core.exceptions import UnsupportedBrokerEventError
 from core.models import (
     BrokerEvent,
+    EventType,
     Order,
     OrderGroup,
+    OrderReceipt,
     OrderStatus,
 )
 from core.position_sizer import PositionSizer
@@ -53,14 +56,55 @@ class AegisExecutionEngine:
 
 # -----------------------------------------------------------------------------
 
-    def _process_broker_event(self, broker_event: BrokerEvent) -> None:
-        """Processes an unread asynchronous broker event notification.
+    def _handle_order_notification(self, receipt: OrderReceipt) -> None:
+        """Processes an incoming order receipt and updates its volatile memory record.
 
         Args:
-            broker_event: The incoming framework event update instance.
+            receipt: The transaction lifecycle response containing the execution state.
         """
-        # TODO: update internal tracking ledger with execution notifications
-        pass
+        # FIXME: Replace this passive guard with an untracked order exception layout
+        if receipt.group_id not in self._order_groups:
+            return
+
+        order_group = self._order_groups[receipt.group_id]
+
+        # FIXME: Raise an untracked order exception if the specific ID is missing
+        if receipt.client_order_id not in order_group.orders:
+            return
+
+        # Mutate the tracking container lifecycle state directly
+        order_group.status = receipt.status
+
+        # Binary eviction rule: clean RAM when the single order reaches a terminal state
+        terminal_statuses = {
+            OrderStatus.FILLED,
+            OrderStatus.CANCELED,
+            OrderStatus.REJECTED,
+        }
+
+        if receipt.status in terminal_statuses:
+            del self._order_groups[receipt.group_id]
+
+# -----------------------------------------------------------------------------
+
+    def _process_broker_event(self, broker_event: BrokerEvent) -> None:
+        """Processes an unread asynchronous broker event notification by routing payloads.
+
+        Args:
+            broker_event: The notification wrapper containing routing flags and transactional data.
+
+        Raises:
+            UnsupportedBrokerEventError: If the event classification category cannot be handled.
+        """
+        if broker_event.event_type == EventType.ORDER_NOTIFICATION:
+            self._handle_order_notification(broker_event.payload)
+        elif broker_event.event_type == EventType.TRADE_NOTIFICATION:
+            # TODO: Implement trade clearing and position sync routing in Milestone 1.1.4
+            pass
+        else:
+            raise UnsupportedBrokerEventError(
+                f"Received unhandled or corrupted event type: {broker_event.event_type}"
+            )
 
 # -----------------------------------------------------------------------------
 

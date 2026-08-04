@@ -21,14 +21,6 @@ from core.models.enums import (
 # =============================================================================
 
 @dataclass(frozen=True)
-class BrokerEvent:
-    """Immutable record capturing broker notifications."""
-    event_type: EventType
-    payload: Any
-
-# -----------------------------------------------------------------------------
-
-@dataclass(frozen=True)
 class ExposureIntent:
     """Immutable data record capturing passive execution desires.
 
@@ -95,17 +87,34 @@ class OrderReceipt:
     """Broker execution response details.
 
     Attributes:
-        broker_order_id: (Optional) Unique broker tracking identifier.
-        client_order_id: Unique internal tracking identifier.
+        average_execution_price: Volume-weighted execution price or None.
+        broker_order_id: Unique broker tracking identifier or None.
+        client_order_id: Unique internal tracking identifier for the specific order.
+        executed_quantity: Explicit volume executed during the current infrastructure tick.
+        group_id: Unique internal tracking identifier for the parent execution group.
+        reject_reason: Broker rejection cause description or None.
         status: Order execution lifecycle state.
-        average_execution_price: (Optional) Volume-weighted execution price.
-        reject_reason: (Optional) Broker rejection cause description.
     """
+    average_execution_price: Decimal | None
     broker_order_id: str | None
     client_order_id: str
+    executed_quantity: Decimal
+    group_id: str
+    reject_reason: str | None
     status: OrderStatus
-    average_execution_price: Decimal | None = None
-    reject_reason: str | None = None
+
+# -----------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class BrokerEvent:
+    """Immutable record capturing broker notifications.
+
+    Attributes:
+        event_type: Infrastructure event classification category.
+        payload: Strongly-typed domain data record payload.
+    """
+    event_type: EventType
+    payload: OrderReceipt | dict[str, Any]
 
 # -----------------------------------------------------------------------------
 

@@ -23,6 +23,7 @@ from tests.testutils.factories import (
     create_currency_converter_factory as create_currency_converter_factory,
     create_market_context_factory as create_market_context_factory,
     create_order_factory as create_order_factory,
+    create_order_receipt_factory as create_order_receipt_factory,
     create_position_factory as create_position_factory,
     create_position_ledger_snapshot_factory as create_position_ledger_snapshot_factory,
     create_position_sizer_factory as create_position_sizer_factory,

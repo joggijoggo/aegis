@@ -22,6 +22,7 @@ from core.models import (
     BrokerEvent,
     EventType,
     Order,
+    OrderReceipt,
     OrderSide,
     OrderStatus,
     OrderType,
@@ -185,9 +186,8 @@ def test_backtrader_broker_adapter_asymmetric_bracket_transmission() -> None:
     )
 
 # -----------------------------------------------------------------------------
-
-def test_backtrader_broker_adapter_event_polling_and_fifo_flow() -> None:
-    """Verifies end-to-end event queue polling, state checks, and FIFO ordering."""
+def test_backtrader_broker_adapter_polling_fifo_flow_for_orders() -> None:
+    """Verifies queue polling and structural unpacking for order events."""
     broker_queue: Queue = Queue()
     bridge_mock = MagicMock(spec=BacktraderBridge)
     bridge_mock.get_broker_queue.return_value = broker_queue
@@ -196,16 +196,37 @@ def test_backtrader_broker_adapter_event_polling_and_fifo_flow() -> None:
 
     assert adapter.has_pending_events() is False
 
-    # 1. Mock an incoming order event without restrictive specs
     mock_order = MagicMock()
     mock_order.ref = 101
     mock_order.status = bt.Order.Completed
-    mock_order.client_order_id = "ORDER-A"
+    mock_order.client_order_id = 'ORDER-A'
     mock_order.executed = MagicMock()
     mock_order.executed.size.__float__.return_value = 10.0
     mock_order.executed.price.__float__.return_value = 1.2000
 
-    # 2. Mock an incoming trade event without restrictive specs
+    broker_queue.put((EventType.ORDER_NOTIFICATION, mock_order))
+    assert adapter.has_pending_events() is True
+
+    event = adapter.poll_event()
+    assert isinstance(event, BrokerEvent)
+    assert event.event_type == EventType.ORDER_NOTIFICATION
+    assert event.payload.broker_order_id == '101'
+    assert event.payload.client_order_id == 'ORDER-A'
+    assert event.payload.executed_quantity == Decimal('10.0')
+    assert adapter.has_pending_events() is False
+
+# -----------------------------------------------------------------------------
+
+def test_backtrader_broker_adapter_polling_fifo_flow_for_trades() -> None:
+    """Verifies queue polling and structural unpacking for trade events."""
+    broker_queue: Queue = Queue()
+    bridge_mock = MagicMock(spec=BacktraderBridge)
+    bridge_mock.get_broker_queue.return_value = broker_queue
+
+    adapter = BacktraderBrokerAdapter(bridge=bridge_mock)
+
+    assert adapter.has_pending_events() is False
+
     mock_trade = MagicMock()
     mock_trade.ref = 202
     mock_trade.isopen = True
@@ -213,30 +234,17 @@ def test_backtrader_broker_adapter_event_polling_and_fifo_flow() -> None:
     mock_trade.commission.__float__.return_value = 1.0
 
     mock_data = MagicMock()
-    mock_data._name = "EURUSD"
+    mock_data._name = 'EURUSD'
     mock_trade.data = mock_data
 
-    # Push raw items into the queue exactly like BacktraderProxyStrategy would do
-    broker_queue.put((EventType.ORDER_NOTIFICATION, mock_order))
     broker_queue.put((EventType.TRADE_NOTIFICATION, mock_trade))
-
     assert adapter.has_pending_events() is True
 
-    # Poll first event (Order) and verify structural unpacking
-    first_event = adapter.poll_event()
-    assert isinstance(first_event, BrokerEvent)
-    assert first_event.event_type == EventType.ORDER_NOTIFICATION
-    assert first_event.payload['broker_order_id'] == "101"
-    assert first_event.payload['client_order_id'] == "ORDER-A"
-    assert first_event.payload['executed_quantity'] == Decimal("10.0")
-    assert adapter.has_pending_events() is True
-
-    # Poll second event (Trade) and verify structural unpacking
-    second_event = adapter.poll_event()
-    assert second_event.event_type == EventType.TRADE_NOTIFICATION
-    assert second_event.payload['broker_trade_id'] == "202"
-    assert second_event.payload['realized_pnl'] == Decimal("50.0")
-
+    event = adapter.poll_event()
+    assert isinstance(event, BrokerEvent)
+    assert event.event_type == EventType.TRADE_NOTIFICATION
+    assert event.payload['broker_trade_id'] == '202'
+    assert event.payload['realized_pnl'] == Decimal('50.0')
     assert adapter.has_pending_events() is False
 
 # -----------------------------------------------------------------------------
@@ -326,11 +334,11 @@ def test_backtrader_broker_adapter_order_clearing_parsing() -> None:
     bridge_mock = MagicMock(spec=BacktraderBridge)
     adapter = BacktraderBrokerAdapter(bridge=bridge_mock)
 
-    # 1. Test standard filled scenario with bracket suffix and floating-point conversion
+    # 1. Test standard filled scenario with bracket suffix and structural mappings
     mock_order_filled = MagicMock()
     mock_order_filled.ref = 42
     mock_order_filled.status = bt.Order.Completed
-    mock_order_filled.client_order_id = "AEGIS-101-SL"
+    mock_order_filled.client_order_id = 'AEGIS-101-SL'
 
     # Secure the nested executed attributes with explicit conversion values
     mock_order_filled.executed = MagicMock()
@@ -342,14 +350,18 @@ def test_backtrader_broker_adapter_order_clearing_parsing() -> None:
     )
 
     assert event_filled.event_type == EventType.ORDER_NOTIFICATION
-    assert isinstance(event_filled.payload, dict)
-    assert event_filled.payload['broker_order_id'] == "42"
-    assert event_filled.payload['client_order_id'] == "AEGIS-101"
-    assert event_filled.payload['status'] == OrderStatus.FILLED
-    assert event_filled.payload['executed_quantity'] == Decimal("100.0")
-    assert event_filled.payload['execution_price'] == Decimal("1.125")
+    assert isinstance(event_filled.payload, OrderReceipt)
 
-    # 2. Test protective edge case: completely empty/absent client_order_id and margin rejection
+    # Assert specific object attribute properties instead of raw dictionaries
+    assert event_filled.payload.average_execution_price == Decimal('1.1250')
+    assert event_filled.payload.broker_order_id == '42'
+    assert event_filled.payload.client_order_id == 'AEGIS-101-SL'
+    assert event_filled.payload.executed_quantity == Decimal('100.0')
+    assert event_filled.payload.group_id == 'AEGIS-101'
+    assert event_filled.payload.reject_reason is None
+    assert event_filled.payload.status == OrderStatus.FILLED
+
+    # 2. Test protective edge case: completely empty client_order_id mapping
     mock_order_rejected = MagicMock()
     mock_order_rejected.ref = 43
     mock_order_rejected.status = bt.Order.Margin
@@ -363,10 +375,11 @@ def test_backtrader_broker_adapter_order_clearing_parsing() -> None:
         EventType.ORDER_NOTIFICATION, mock_order_rejected
     )
 
-    assert event_rejected.payload['client_order_id'] == ""
-    assert event_rejected.payload['status'] == OrderStatus.REJECTED
-    assert event_rejected.payload['executed_quantity'] == Decimal("0.0")
-    assert event_rejected.payload['execution_price'] == Decimal("0.0")
+    assert event_rejected.payload.client_order_id == ''
+    assert event_rejected.payload.group_id == ''
+    assert event_rejected.payload.status == OrderStatus.REJECTED
+    assert event_rejected.payload.executed_quantity == Decimal('0.0')
+    assert event_rejected.payload.average_execution_price == Decimal('0.0')
 
 # -----------------------------------------------------------------------------
 

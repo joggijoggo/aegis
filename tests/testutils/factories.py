@@ -9,7 +9,9 @@ from core.models import (
     AccountSnapshot,
     ContractSpecification,
     Order,
+    OrderReceipt,
     OrderSide,
+    OrderStatus,
     OrderType,
     Position,
     PositionLedgerSnapshot,
@@ -129,6 +131,22 @@ def create_order_factory(**kwargs) -> Order:
     }
     defaults.update(kwargs)
     return Order(**defaults)
+
+# -----------------------------------------------------------------------------
+
+def create_order_receipt_factory(**kwargs) -> OrderReceipt:
+    """Generates an OrderReceipt instance with dynamic keyword overrides."""
+    defaults = {
+        'average_execution_price': Decimal('1.08500'),
+        'broker_order_id': 'BRK-TEST-ID-12345',
+        'client_order_id': 'AEGIS-ORD-TEST',
+        'executed_quantity': Decimal('1.0'),
+        'group_id': 'AEGIS-ORD-TEST',
+        'reject_reason': None,
+        'status': OrderStatus.FILLED,
+    }
+    defaults.update(kwargs)
+    return OrderReceipt(**defaults)
 
 # -----------------------------------------------------------------------------
 

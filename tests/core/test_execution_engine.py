@@ -10,6 +10,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from core.contract_registry import ContractRegistry
+from core.exceptions import UnsupportedBrokerEventError
 from core.execution_engine import AegisExecutionEngine
 from core.models import (
     BrokerEvent,
@@ -17,6 +18,7 @@ from core.models import (
     ExposureIntent,
     MarketContext,
     MarketPricePoint,
+    OrderReceipt,
     OrderStatus,
 )
 from core.position_sizer import PositionSizer
@@ -28,6 +30,7 @@ from tests.testutils import (
     FakeMarketFeed,
     create_contract_specification_factory,
     create_market_context_factory,
+    create_order_factory,
     create_position_sizer_factory,
 )
 
@@ -216,6 +219,74 @@ def test_engine_cycle_skips_processing_on_none_intent(
 
     assert len(broker.submitted_orders) == 0
     assert broker.snapshot_call_count == 1
+
+# -----------------------------------------------------------------------------
+
+def test_engine_handles_unsupported_broker_event_error() -> None:
+    """Ensures that an unknown event category triggers an immediate execution halt."""
+    bot = FakeBot()
+    broker = FakeBrokerAdapter()
+    registry = ContractRegistry(specifications={})
+    sizer = create_position_sizer_factory()
+
+    engine = AegisExecutionEngine(
+        bot=bot,
+        broker_adapter=broker,
+        contract_registry=registry,
+        position_sizer=sizer,
+    )
+
+    # Inject a corrupted or unhandled infrastructure event type wrapper
+    corrupted_event = BrokerEvent(event_type="INVALID_TYPE", payload={})
+
+    with pytest.raises(UnsupportedBrokerEventError):
+        engine._process_broker_event(corrupted_event)
+
+# -----------------------------------------------------------------------------
+
+def test_engine_reconciles_order_lifecycle_and_evicts_group() -> None:
+    """Ensures order receipts mutate volatile tracking records and clean RAM."""
+    bot = FakeBot()
+    broker = FakeBrokerAdapter()
+    registry = ContractRegistry(specifications={})
+    sizer = create_position_sizer_factory()
+
+    engine = AegisExecutionEngine(
+        bot=bot,
+        broker_adapter=broker,
+        contract_registry=registry,
+        position_sizer=sizer,
+    )
+
+    # Seed the volatile execution registry with an active pending trade intent
+    parent_order = create_order_factory()
+    engine._register_order_group(parent_order)
+    order_id = parent_order.client_order_id
+
+    assert len(engine._order_groups) == 1
+
+    current_stored_group = engine._order_groups[order_id]
+    assert current_stored_group.status == OrderStatus.PENDING
+
+    # Synthesize a transaction lifecycle response marking execution fulfillment
+    receipt = OrderReceipt(
+        average_execution_price=Decimal("1.08500"),
+        broker_order_id="BRK-12345",
+        client_order_id=order_id,
+        executed_quantity=Decimal("1.0"),
+        group_id=order_id,
+        reject_reason=None,
+        status=OrderStatus.FILLED,
+    )
+    notification_event = BrokerEvent(
+        event_type=EventType.ORDER_NOTIFICATION, payload=receipt
+    )
+
+    # Route transmission through the main entry point dispatcher
+    engine._process_broker_event(notification_event)
+
+    # Assert binary eviction rule successfully cleared the record from memory
+    assert len(engine._order_groups) == 0
 
 # =============================================================================
 # -----------------------------------------------------------------------------
