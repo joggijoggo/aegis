@@ -10,7 +10,12 @@ from bots.base_bot import BaseBot
 from broker_adapters.base_broker_adapter import BaseBrokerAdapter
 from core.caching import HistoricalBuffer
 from core.contract_registry import ContractRegistry
-from core.models import BrokerEvent
+from core.models import (
+    BrokerEvent,
+    Order,
+    OrderGroup,
+    OrderStatus,
+)
 from core.position_sizer import PositionSizer
 from market_feeds.base_market_feed import BaseMarketFeed
 
@@ -40,6 +45,7 @@ class AegisExecutionEngine:
         """
         self._bot = bot
         self._broker_adapter = broker_adapter
+        self._order_groups: dict[str, OrderGroup] = {}
         self._contract_registry = contract_registry
         self._position_sizer = position_sizer
         self._risk_percent = Decimal('0.01')
@@ -55,6 +61,17 @@ class AegisExecutionEngine:
         """
         # TODO: update internal tracking ledger with execution notifications
         pass
+
+# -----------------------------------------------------------------------------
+
+    def _register_order_group(self, order: Order) -> None:
+        """Instantiates and registers a new tracking group."""
+        order_group = OrderGroup(
+            group_id=order.client_order_id,
+            orders={order.client_order_id: order},
+            status=OrderStatus.PENDING,
+        )
+        self._order_groups[order.client_order_id] = order_group
 
 # -----------------------------------------------------------------------------
 
@@ -112,6 +129,9 @@ class AegisExecutionEngine:
                     account_snapshot=broker_snapshot.account,
                     market_context=market_context,
                 )
+
+                # Record the tracking container prior to infrastructure transmission.
+                self._register_order_group(order)
 
                 self._broker_adapter.submit_order(order)
         except StopIteration:

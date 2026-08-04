@@ -17,6 +17,7 @@ from core.models import (
     ExposureIntent,
     MarketContext,
     MarketPricePoint,
+    OrderStatus,
 )
 from core.position_sizer import PositionSizer
 from tests.testutils import (
@@ -25,6 +26,9 @@ from tests.testutils import (
     FakeBot,
     FakeBrokerAdapter,
     FakeMarketFeed,
+    create_contract_specification_factory,
+    create_market_context_factory,
+    create_position_sizer_factory,
 )
 
 # =============================================================================
@@ -103,6 +107,48 @@ def test_engine_cycle_executes_order_on_valid_intent(
     assert broker.submitted_orders[0].quantity == Decimal('0.20')
     # Assert that the atomic temporal snapshot was pulled exactly once during the cycle
     assert broker.snapshot_call_count == 1
+
+# -----------------------------------------------------------------------------
+
+def test_engine_cycle_registers_volatile_order_group() -> None:
+    """Ensures that a submitted order creates an isolated internal tracking group record."""
+    intent = ExposureIntent(
+        alpha_direction=1.0,
+        stop_loss_ticks=500.0,
+        take_profit_ticks=1000.0,
+    )
+    bot = FakeBot(exposure_intent=intent, warm_up=10)
+    broker = FakeBrokerAdapter()
+
+    spec = create_contract_specification_factory()
+    registry = ContractRegistry(specifications={DEFAULT_SYMBOL: spec})
+    sizer = create_position_sizer_factory()
+
+    context = create_market_context_factory()
+    feed = FakeMarketFeed(market_contexts=[context])
+
+    engine = AegisExecutionEngine(
+        bot=bot,
+        broker_adapter=broker,
+        contract_registry=registry,
+        position_sizer=sizer,
+    )
+
+    assert len(engine._order_groups) == 0
+
+    engine.run_execution_cycle(symbol=DEFAULT_SYMBOL, market_feed=feed)
+
+    # Assert that the engine successfully populated its volatile memory ledger
+    assert len(engine._order_groups) == 1
+
+    # Retrieve the tracking record using the submitted order id to check fields mapping
+    order_id = broker.submitted_orders[0].client_order_id
+    assert order_id in engine._order_groups
+
+    recorded_group = engine._order_groups[order_id]
+    assert recorded_group.group_id == order_id
+    assert order_id in recorded_group.orders
+    assert recorded_group.status == OrderStatus.PENDING
 
 # -----------------------------------------------------------------------------
 

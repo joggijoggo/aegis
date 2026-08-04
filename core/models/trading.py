@@ -75,6 +75,21 @@ class Order:
 
 # -----------------------------------------------------------------------------
 
+@dataclass
+class OrderGroup:
+    """Composite tracking entity for an execution request and its protections.
+
+    Attributes:
+        group_id: Unique framework tracking identifier.
+        orders: Internal mapping of tracked orders indexed by client_order_id.
+        status: Core execution lifecycle state of the trading intent.
+    """
+    group_id: str
+    orders: dict[str, Order]
+    status: OrderStatus
+
+# -----------------------------------------------------------------------------
+
 @dataclass(frozen=True)
 class OrderReceipt:
     """Broker execution response details.
