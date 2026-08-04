@@ -36,6 +36,7 @@ from tests.testutils import (
     create_order_factory,
     create_position_sizer_factory,
 )
+from tests.testutils.factories import create_trade_receipt_factory
 
 # =============================================================================
 # -----------------------------------------------------------------------------
@@ -313,6 +314,45 @@ def test_engine_reconciles_order_lifecycle_and_evicts_group() -> None:
     engine._process_broker_event(notification_event)
 
     # Assert binary eviction rule successfully cleared the record from memory
+    assert len(engine._order_groups) == 0
+
+# -----------------------------------------------------------------------------
+
+def test_engine_reconciles_trade_lifecycle_and_evicts_group() -> None:
+    """Ensures trade clearing receipts evaluate closure and clean RAM."""
+    bot = FakeBot()
+    broker = FakeBrokerAdapter()
+    registry = ContractRegistry(specifications={})
+    sizer = create_position_sizer_factory()
+
+    engine = AegisExecutionEngine(
+        bot=bot,
+        broker_adapter=broker,
+        contract_registry=registry,
+        position_sizer=sizer,
+    )
+
+    # Seed the volatile execution registry with an active trading group entry
+    parent_order = create_order_factory()
+    engine._register_order_group(parent_order)
+    group_id = parent_order.client_order_id
+
+    assert len(engine._order_groups) == 1
+
+    # Synthesize a trade notification clearing event marking final closure
+    receipt = create_trade_receipt_factory(
+        group_id=group_id,
+        is_open=False,
+    )
+    notification_event = BrokerEvent(
+        event_type=EventType.TRADE_NOTIFICATION,
+        payload=receipt,
+    )
+
+    # Route transmission through the main entry point dispatcher
+    engine._process_broker_event(notification_event)
+
+    # Assert that the engine successfully evacuated the completed group from RAM
     assert len(engine._order_groups) == 0
 
 # -----------------------------------------------------------------------------

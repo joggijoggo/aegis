@@ -24,6 +24,7 @@ from core.models import (
     OrderSide,
     OrderStatus,
     OrderType,
+    TradeReceipt,
 )
 from core.position_sizer import PositionSizer
 from market_feeds.base_market_feed import BaseMarketFeed
@@ -93,6 +94,25 @@ class AegisExecutionEngine:
 
 # -----------------------------------------------------------------------------
 
+    def _handle_trade_notification(self, receipt: TradeReceipt) -> None:
+        """Processes an incoming trade clearing record and evaluates group closure.
+
+        Args:
+            receipt: The transaction clearing response mapping performance.
+        """
+        # FIXME: Replace this passive guard with an untracked trade exception layout
+        if receipt.group_id not in self._order_groups:
+            return
+
+        # FIXME: Execute rigorous order group microstructural integrity checks
+        if not receipt.is_open:
+            del self._order_groups[receipt.group_id]
+        else:
+            # TODO: Implement partial fill tracking and portfolio accounting updates
+            pass
+
+# -----------------------------------------------------------------------------
+
     def _process_broker_event(self, broker_event: BrokerEvent) -> None:
         """Processes an unread asynchronous broker event notification by routing payloads.
 
@@ -105,8 +125,7 @@ class AegisExecutionEngine:
         if broker_event.event_type == EventType.ORDER_NOTIFICATION:
             self._handle_order_notification(broker_event.payload)
         elif broker_event.event_type == EventType.TRADE_NOTIFICATION:
-            # TODO: Implement trade clearing and position sync routing in Milestone 1.1.4
-            pass
+            self._handle_trade_notification(broker_event.payload)
         else:
             raise UnsupportedBrokerEventError(
                 f"Received unhandled or corrupted event type: {broker_event.event_type}"
