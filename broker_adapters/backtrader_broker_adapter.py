@@ -28,6 +28,7 @@ from core.models import (
     PositionLedgerSnapshot,
     PositionSide,
     TimeInForce,
+    TradeReceipt,
 )
 
 # =============================================================================
@@ -72,6 +73,8 @@ class BacktraderBrokerAdapter(BaseBrokerAdapter):
         """
         self._bridge = bridge
         self._broker_queue = bridge.get_broker_queue()
+        self._next_trade_id: int = 1 # Starts at 1 to avoid None clashing.
+        self._trade_id_to_group_mapping: dict[int, str] = {}
 
 # -----------------------------------------------------------------------------
 
@@ -297,6 +300,11 @@ class BacktraderBrokerAdapter(BaseBrokerAdapter):
         has_tp = tp_price is not None
         has_children = has_sl or has_tp
 
+        # Capture and map the unique sequence anchor for the manual bracket cycle
+        current_trade_id = self._next_trade_id
+        self._trade_id_to_group_mapping[current_trade_id] = order.client_order_id
+        self._next_trade_id += 1
+
         parent = entry_op(
             data=data,
             size=size,
@@ -304,6 +312,7 @@ class BacktraderBrokerAdapter(BaseBrokerAdapter):
             valid=None,
             transmit=not has_children,
             client_order_id=order.client_order_id,
+            tradeid=current_trade_id,
         )
 
         if has_sl:
@@ -317,6 +326,7 @@ class BacktraderBrokerAdapter(BaseBrokerAdapter):
                 parent=parent,
                 transmit=transmit_sl,
                 client_order_id=f"{order.client_order_id}-SL",
+                tradeid=current_trade_id,
             )
 
         if has_tp:
@@ -329,6 +339,7 @@ class BacktraderBrokerAdapter(BaseBrokerAdapter):
                 parent=parent,
                 transmit=True,
                 client_order_id=f"{order.client_order_id}-TP",
+                tradeid=current_trade_id,
             )
 
 # -----------------------------------------------------------------------------
@@ -343,7 +354,7 @@ class BacktraderBrokerAdapter(BaseBrokerAdapter):
         Returns:
             The translated broker event record containing validated decimal payloads.
         """
-        payload: OrderReceipt | dict[str, Any] = {}
+        payload: OrderReceipt | TradeReceipt = {}
 
         if event_type == EventType.ORDER_NOTIFICATION:
             raw_order: bt.Order = raw_data
@@ -375,17 +386,22 @@ class BacktraderBrokerAdapter(BaseBrokerAdapter):
         elif event_type == EventType.TRADE_NOTIFICATION:
             raw_trade: bt.Trade = raw_data
 
+            # Leverage native dict KeyLookup to fail-fast upon untracked trade elements
+            group_id = self._trade_id_to_group_mapping[raw_trade.tradeid]
+
             # Tight type mutation pipeline: float -> str -> Decimal
             realized_pnl = Decimal(str(float(raw_trade.pnl)))
             commission = Decimal(str(float(raw_trade.commission)))
 
-            payload = {
-                'broker_trade_id': str(raw_trade.ref),
-                'symbol': str(raw_trade.data._name),
-                'realized_pnl': realized_pnl,
-                'commission': commission,
-                'is_open': bool(raw_trade.isopen),
-            }
+            # Instantiate a real domain TradeReceipt record instead of a dict
+            payload = TradeReceipt(
+                broker_trade_id=str(raw_trade.ref),
+                commission=commission,
+                group_id=group_id,
+                is_open=bool(raw_trade.isopen),
+                realized_pnl=realized_pnl,
+                symbol=str(raw_trade.data._name),
+            )
 
         return BrokerEvent(
             event_type=event_type,

@@ -19,3 +19,4 @@ from core.models.trading import Order as Order
 from core.models.trading import OrderGroup as OrderGroup
 from core.models.trading import OrderReceipt as OrderReceipt
 from core.models.trading import RegimeConfidenceVector as RegimeConfidenceVector
+from core.models.trading import TradeReceipt as TradeReceipt

@@ -17,6 +17,7 @@ from core.models import (
     PositionLedgerSnapshot,
     PositionSide,
     TimeInForce,
+    TradeReceipt,
 )
 from core.models.market import (
     MarketContext,
@@ -181,6 +182,21 @@ def create_position_sizer_factory(**kwargs: Any) -> PositionSizer:
     }
     defaults.update(kwargs)
     return PositionSizer(**defaults)
+
+# -----------------------------------------------------------------------------
+
+def create_trade_receipt_factory(**kwargs) -> TradeReceipt:
+    """Generates a TradeReceipt instance with dynamic keyword overrides."""
+    defaults = {
+        'broker_trade_id': 'TRD-TEST-ID-67890',
+        'commission': Decimal('1.50'),
+        'group_id': 'AEGIS-ORD-TEST',
+        'is_open': False,
+        'realized_pnl': Decimal('150.00'),
+        'symbol': 'EURUSD',
+    }
+    defaults.update(kwargs)
+    return TradeReceipt(**defaults)
 
 # =============================================================================
 # -----------------------------------------------------------------------------

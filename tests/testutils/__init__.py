@@ -27,6 +27,7 @@ from tests.testutils.factories import (
     create_position_factory as create_position_factory,
     create_position_ledger_snapshot_factory as create_position_ledger_snapshot_factory,
     create_position_sizer_factory as create_position_sizer_factory,
+    create_trade_receipt_factory as create_trade_receipt_factory,
 )
 from tests.testutils.mocks import (
     FakeBot as FakeBot,

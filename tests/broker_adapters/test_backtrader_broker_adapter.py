@@ -29,6 +29,7 @@ from core.models import (
     PositionLedgerSnapshot,
     PositionSide,
     TimeInForce,
+    TradeReceipt,
 )
 
 # =============================================================================
@@ -91,6 +92,7 @@ def test_backtrader_broker_adapter_asymmetric_bracket_missing_stop_loss() -> Non
     mock_bridge.strategy = mock_strategy
 
     adapter = BacktraderBrokerAdapter(bridge=mock_bridge)
+    start_tradeid = adapter._next_trade_id
 
     mock_order = MagicMock(spec=Order)
     mock_order.quantity = Decimal('1.0')
@@ -106,11 +108,25 @@ def test_backtrader_broker_adapter_asymmetric_bracket_missing_stop_loss() -> Non
 
     # Parent must hold transmission to let the child stack
     mock_strategy.buy.assert_called_once_with(
-        data=mock_data, size=1.0, exectype=bt.Order.Market, valid=None, transmit=False, client_order_id='AEGIS-MISSING-SL'
+        data=mock_data,
+        size=1.0,
+        exectype=bt.Order.Market,
+        valid=None,
+        transmit=False,
+        client_order_id='AEGIS-MISSING-SL',
+        tradeid=start_tradeid,
     )
     # Child Take Profit is the last link and must release the atomic block
     mock_strategy.sell.assert_called_once_with(
-        data=mock_data, size=1.0, exectype=bt.Order.Limit, price=1.1400, valid=None, parent=mock_parent_order, transmit=True, client_order_id='AEGIS-MISSING-SL-TP'
+        data=mock_data,
+        size=1.0,
+        exectype=bt.Order.Limit,
+        price=1.1400,
+        valid=None,
+        parent=mock_parent_order,
+        transmit=True,
+        client_order_id='AEGIS-MISSING-SL-TP',
+        tradeid=start_tradeid,
     )
 
 # -----------------------------------------------------------------------------
@@ -128,6 +144,7 @@ def test_backtrader_broker_adapter_asymmetric_bracket_missing_take_profit() -> N
     mock_bridge.strategy = mock_strategy
 
     adapter = BacktraderBrokerAdapter(bridge=mock_bridge)
+    start_tradeid = adapter._next_trade_id
 
     mock_order = MagicMock(spec=Order)
     mock_order.quantity = Decimal('1.0')
@@ -143,11 +160,25 @@ def test_backtrader_broker_adapter_asymmetric_bracket_missing_take_profit() -> N
 
     # Parent must hold transmission to let the child stack
     mock_strategy.buy.assert_called_once_with(
-        data=mock_data, size=1.0, exectype=bt.Order.Market, valid=None, transmit=False, client_order_id='AEGIS-MISSING-TP'
+        data=mock_data,
+        size=1.0,
+        exectype=bt.Order.Market,
+        valid=None,
+        transmit=False,
+        client_order_id='AEGIS-MISSING-TP',
+        tradeid=start_tradeid,
     )
     # Child Stop Loss is the last link and must release the atomic block
     mock_strategy.sell.assert_called_once_with(
-        data=mock_data, size=1.0, exectype=bt.Order.Stop, price=1.1200, valid=None, parent=mock_parent_order, transmit=True, client_order_id='AEGIS-MISSING-TP-SL'
+        data=mock_data,
+        size=1.0,
+        exectype=bt.Order.Stop,
+        price=1.1200,
+        valid=None,
+        parent=mock_parent_order,
+        transmit=True,
+        client_order_id='AEGIS-MISSING-TP-SL',
+        tradeid=start_tradeid,
     )
 
 # -----------------------------------------------------------------------------
@@ -165,6 +196,7 @@ def test_backtrader_broker_adapter_asymmetric_bracket_transmission() -> None:
     mock_bridge.strategy = mock_strategy
 
     adapter = BacktraderBrokerAdapter(bridge=mock_bridge)
+    start_tradeid = adapter._next_trade_id
 
     mock_order = MagicMock(spec=Order)
     mock_order.quantity = Decimal('1.0')
@@ -179,10 +211,24 @@ def test_backtrader_broker_adapter_asymmetric_bracket_transmission() -> None:
     adapter.submit_order(mock_order)
 
     mock_strategy.buy.assert_called_once_with(
-        data=mock_data, size=1.0, exectype=bt.Order.Market, valid=None, transmit=False, client_order_id='AEGIS-ASYM'
+        data=mock_data,
+        size=1.0,
+        exectype=bt.Order.Market,
+        valid=None,
+        transmit=False,
+        client_order_id='AEGIS-ASYM',
+        tradeid=start_tradeid,
     )
     mock_strategy.sell.assert_called_once_with(
-        data=mock_data, size=1.0, exectype=bt.Order.Stop, price=1.1200, valid=None, parent=mock_parent_order, transmit=True, client_order_id='AEGIS-ASYM-SL'
+        data=mock_data,
+        size=1.0,
+        exectype=bt.Order.Stop,
+        price=1.1200,
+        valid=None,
+        parent=mock_parent_order,
+        transmit=True,
+        client_order_id='AEGIS-ASYM-SL',
+        tradeid=start_tradeid,
     )
 
 # -----------------------------------------------------------------------------
@@ -227,11 +273,20 @@ def test_backtrader_broker_adapter_polling_fifo_flow_for_trades() -> None:
 
     assert adapter.has_pending_events() is False
 
+    # Pre-populate the sequence mapping to satisfy the strict dict key lookup
+    adapter._trade_id_to_group_mapping[42] = 'AEGIS-101'
+
+    # Mock an incoming trade event with its nested order history mapping
+    mock_order = MagicMock()
+    mock_order.client_order_id = 'AEGIS-101-SL'
+
     mock_trade = MagicMock()
     mock_trade.ref = 202
+    mock_trade.tradeid = 42
     mock_trade.isopen = True
     mock_trade.pnl.__float__.return_value = 50.0
     mock_trade.commission.__float__.return_value = 1.0
+    mock_trade.orders = [mock_order]
 
     mock_data = MagicMock()
     mock_data._name = 'EURUSD'
@@ -243,8 +298,12 @@ def test_backtrader_broker_adapter_polling_fifo_flow_for_trades() -> None:
     event = adapter.poll_event()
     assert isinstance(event, BrokerEvent)
     assert event.event_type == EventType.TRADE_NOTIFICATION
-    assert event.payload['broker_trade_id'] == '202'
-    assert event.payload['realized_pnl'] == Decimal('50.0')
+
+    # Updated to validate explicit object attribute accessors
+    assert isinstance(event.payload, TradeReceipt)
+    assert event.payload.broker_trade_id == '202'
+    assert event.payload.group_id == 'AEGIS-101'
+    assert event.payload.realized_pnl == Decimal('50.0')
     assert adapter.has_pending_events() is False
 
 # -----------------------------------------------------------------------------
@@ -310,6 +369,7 @@ def test_backtrader_broker_adapter_market_order_submission() -> None:
     mock_bridge.strategy = mock_strategy
 
     adapter = BacktraderBrokerAdapter(bridge=mock_bridge)
+    start_tradeid = adapter._next_trade_id
 
     mock_order = MagicMock(spec=Order)
     mock_order.quantity = Decimal('1.5')
@@ -324,7 +384,13 @@ def test_backtrader_broker_adapter_market_order_submission() -> None:
     adapter.submit_order(mock_order)
 
     mock_strategy.buy.assert_called_once_with(
-        data=mock_data, size=1.5, exectype=bt.Order.Market, valid=None, transmit=True, client_order_id='AEGIS-MKT'
+        data=mock_data,
+        size=1.5,
+        exectype=bt.Order.Market,
+        valid=None,
+        transmit=True,
+        client_order_id='AEGIS-MKT',
+        tradeid=start_tradeid,
     )
 
 # -----------------------------------------------------------------------------
@@ -481,6 +547,7 @@ def test_backtrader_broker_adapter_symmetric_sell_bracket_routing() -> None:
     mock_bridge.strategy = mock_strategy
 
     adapter = BacktraderBrokerAdapter(bridge=mock_bridge)
+    start_tradeid = adapter._next_trade_id
 
     mock_order = MagicMock(spec=Order)
     mock_order.quantity = Decimal('2.5')
@@ -495,7 +562,13 @@ def test_backtrader_broker_adapter_symmetric_sell_bracket_routing() -> None:
     adapter.submit_order(mock_order)
 
     mock_strategy.sell.assert_called_once_with(
-        data=mock_data, size=2.5, exectype=bt.Order.Market, valid=None, transmit=False, client_order_id='AEGIS-SELL-BRK'
+        data=mock_data,
+        size=2.5,
+        exectype=bt.Order.Market,
+        valid=None,
+        transmit=False,
+        client_order_id='AEGIS-SELL-BRK',
+        tradeid=start_tradeid,
     )
 
     expected_child_calls = [
@@ -507,7 +580,8 @@ def test_backtrader_broker_adapter_symmetric_sell_bracket_routing() -> None:
             valid=None,
             parent=mock_parent_order,
             transmit=False,
-            client_order_id='AEGIS-SELL-BRK-SL'
+            client_order_id='AEGIS-SELL-BRK-SL',
+            tradeid=start_tradeid,
         ),
         call(
             data=mock_data,
@@ -517,7 +591,8 @@ def test_backtrader_broker_adapter_symmetric_sell_bracket_routing() -> None:
             valid=None,
             parent=mock_parent_order,
             transmit=True,
-            client_order_id='AEGIS-SELL-BRK-TP'
+            client_order_id='AEGIS-SELL-BRK-TP',
+            tradeid=start_tradeid,
         )
     ]
     mock_strategy.buy.assert_has_calls(expected_child_calls, any_order=False)
@@ -525,35 +600,38 @@ def test_backtrader_broker_adapter_symmetric_sell_bracket_routing() -> None:
 # -----------------------------------------------------------------------------
 
 def test_backtrader_broker_adapter_trade_clearing_parsing() -> None:
-    """Verifies microstructure trade event parsing and floating point containment."""
+    """Verifies infrastructure trade notification clearing and asset mappings."""
     bridge_mock = MagicMock(spec=BacktraderBridge)
     adapter = BacktraderBrokerAdapter(bridge=bridge_mock)
 
-    # Remove spec restriction to allow dynamic attributes instantiation
-    mock_trade = MagicMock()
-    mock_trade.ref = 777
-    mock_trade.isopen = False
+    # 1. Bind an explicit tracking sequence mapping to satisfy the dictionary lookup
+    adapter._trade_id_to_group_mapping[42] = 'AEGIS-202'
 
-    # Secure the float casting pipeline on native parameters
-    mock_trade.pnl.__float__.return_value = 150.75
+    # 2. Mock a native closed trade lifecycle notification instance
+    mock_trade = MagicMock()
+    mock_trade.ref = 88
+    mock_trade.tradeid = 42
+    mock_trade.isopen = False
+    mock_trade.pnl.__float__.return_value = 250.50
     mock_trade.commission.__float__.return_value = 2.50
 
-    # Configure the financial asset symbol string extraction cleanly
     mock_data = MagicMock()
-    mock_data._name = "EURUSD"
+    mock_data._name = 'GBPUSD'
     mock_trade.data = mock_data
 
-    event_trade = adapter._translate_to_broker_event(
+    event = adapter._translate_to_broker_event(
         EventType.TRADE_NOTIFICATION, mock_trade
     )
 
-    assert event_trade.event_type == EventType.TRADE_NOTIFICATION
-    assert isinstance(event_trade.payload, dict)
-    assert event_trade.payload['broker_trade_id'] == "777"
-    assert event_trade.payload['symbol'] == "EURUSD"
-    assert event_trade.payload['realized_pnl'] == Decimal("150.75")
-    assert event_trade.payload['commission'] == Decimal("2.5")
-    assert event_trade.payload['is_open'] is False
+    # 3. Assert correct mapping transformation towards the domain contract layout
+    assert event.event_type == EventType.TRADE_NOTIFICATION
+    assert isinstance(event.payload, TradeReceipt)
+    assert event.payload.broker_trade_id == '88'
+    assert event.payload.commission == Decimal('2.5')
+    assert event.payload.group_id == 'AEGIS-202'
+    assert event.payload.is_open is False
+    assert event.payload.realized_pnl == Decimal('250.5')
+    assert event.payload.symbol == 'GBPUSD'
 
 # -----------------------------------------------------------------------------
 
