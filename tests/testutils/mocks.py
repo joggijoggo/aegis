@@ -8,18 +8,19 @@ from broker_adapters.base_broker_adapter import BaseBrokerAdapter
 from core.models import (
     AccountSnapshot,
     BrokerEvent,
+    BrokerSnapshot,
     EventType,
     ExposureIntent,
     MarketContext,
     Order,
     OrderStatus,
-    PositionLedger,
+    PositionLedgerSnapshot,
 )
 from market_feeds.base_market_feed import BaseMarketFeed
 from strategies.base_strategy import AbstractStrategy
 from tests.testutils import (
     create_account_snapshot_factory,
-    create_position_ledger_factory,
+    create_position_ledger_snapshot_factory,
 )
 
 # =============================================================================
@@ -69,25 +70,36 @@ class FakeBrokerAdapter(BaseBrokerAdapter):
     def __init__(
         self,
         account_snapshot: AccountSnapshot | None = None,
-        position_ledger: PositionLedger | None = None
+        position_ledger: PositionLedgerSnapshot | None = None
     ):
         """Initializes the fake broker gateway with a static ledger snapshot."""
         self.submitted_orders: list[Order] = []
+        self.snapshot_call_count = 0  # Call counter for execution verification
         self._account_snapshot = account_snapshot or create_account_snapshot_factory()
-        self._position_ledger = position_ledger or create_position_ledger_factory()
+        self._position_ledger = position_ledger or create_position_ledger_snapshot_factory()
         self._pending_events: Queue = Queue()
 
 # -----------------------------------------------------------------------------
 
-    def get_account_snapshot(self) -> AccountSnapshot:
+    def _get_account_snapshot(self) -> AccountSnapshot:
         """Gets the current trading account snapshot."""
         return self._account_snapshot
 
 # -----------------------------------------------------------------------------
 
-    def get_position_ledger(self) -> PositionLedger:
+    def _get_position_ledger_snapshot(self) -> PositionLedgerSnapshot:
         """Gets the current position ledger snapshot from the fake venue ledger."""
         return self._position_ledger
+
+# -----------------------------------------------------------------------------
+
+    def get_broker_snapshot(self) -> BrokerSnapshot:
+        """Retrieves the unified temporal snapshot of account metrics and exposures."""
+        self.snapshot_call_count += 1 # Increment the atomic verification tracker.
+        return BrokerSnapshot(
+            account=self._get_account_snapshot(),
+            position_ledger=self._get_position_ledger_snapshot(),
+        )
 
 # -----------------------------------------------------------------------------
 

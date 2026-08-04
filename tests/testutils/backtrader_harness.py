@@ -23,7 +23,7 @@ from core.contract_registry import ContractRegistry
 from core.execution_engine import AegisExecutionEngine
 from core.models import (
     AccountSnapshot,
-    PositionLedger,
+    PositionLedgerSnapshot,
 )
 from core.position_sizer import PositionSizer
 from market_feeds.backtrader_market_feed import BacktraderMarketFeed
@@ -42,7 +42,7 @@ class DomainTelemetryRecord:
     account_snapshot: AccountSnapshot
     exposure_intent: ExposureIntent
     market_context: MarketContext
-    position_ledger: PositionLedger
+    position_ledger: PositionLedgerSnapshot
 
 # =============================================================================
 # -----------------------------------------------------------------------------
@@ -145,17 +145,16 @@ class TelemetryBot(BaseBot):
                 "Ensure set_broker_adapter() is invoked before starting the simulation loop."
             )
 
-        account_snapshot = self._adapter.get_account_snapshot()
-        position_ledger = self._adapter.get_position_ledger()
+        broker_snapshot = self._adapter.get_broker_snapshot()
 
         exposure_intent = self._evaluate(market_context, historical_values)
 
         self.history.append(
             DomainTelemetryRecord(
-                account_snapshot=account_snapshot,
+                account_snapshot=broker_snapshot.account,
                 exposure_intent=exposure_intent,
                 market_context=market_context,
-                position_ledger=position_ledger
+                position_ledger=broker_snapshot.position_ledger,
             )
         )
         return exposure_intent

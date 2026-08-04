@@ -12,8 +12,9 @@ from abc import (
 from core.models import (
     AccountSnapshot,
     BrokerEvent,
+    BrokerSnapshot,
     Order,
-    PositionLedger,
+    PositionLedgerSnapshot,
 )
 
 # =============================================================================
@@ -26,7 +27,7 @@ class BaseBrokerAdapter(ABC):
 # -----------------------------------------------------------------------------
 
     @abstractmethod
-    def get_account_snapshot(self) -> AccountSnapshot:
+    def _get_account_snapshot(self) -> AccountSnapshot:
         """Gets the current account snapshot.
 
         Returns:
@@ -40,11 +41,22 @@ class BaseBrokerAdapter(ABC):
 # -----------------------------------------------------------------------------
 
     @abstractmethod
-    def get_position_ledger(self) -> PositionLedger:
+    def _get_position_ledger_snapshot(self) -> PositionLedgerSnapshot:
         """Retrieves the immutable ledger of all currently active market exposures.
 
         Returns:
-            PositionLedger instance containing open positions indexed by ticket_id.
+            PositionLedgerSnapshot instance containing open positions indexed by ticket_id.
+        """
+        pass
+
+# -----------------------------------------------------------------------------
+
+    @abstractmethod
+    def get_broker_snapshot(self) -> BrokerSnapshot:
+        """Retrieves the unified temporal snapshot of account metrics and market exposures.
+
+        Returns:
+            A frozen BrokerSnapshot containing account and ledger snapshots.
         """
         pass
 

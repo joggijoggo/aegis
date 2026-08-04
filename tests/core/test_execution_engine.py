@@ -61,6 +61,9 @@ def test_execution_engine_broker_event_flushing() -> None:
     engine._process_broker_event.assert_called_once_with(fake_event)
     assert adapter.has_pending_events() is False
 
+    # Assert that the atomic temporal snapshot was pulled exactly once during the cycle
+    assert adapter.snapshot_call_count == 1
+
 # -----------------------------------------------------------------------------
 
 def test_engine_cycle_executes_order_on_valid_intent(
@@ -98,6 +101,8 @@ def test_engine_cycle_executes_order_on_valid_intent(
     assert len(broker.submitted_orders) == 1
     assert broker.submitted_orders[0].symbol == DEFAULT_SYMBOL
     assert broker.submitted_orders[0].quantity == Decimal('0.20')
+    # Assert that the atomic temporal snapshot was pulled exactly once during the cycle
+    assert broker.snapshot_call_count == 1
 
 # -----------------------------------------------------------------------------
 
@@ -131,6 +136,7 @@ def test_engine_cycle_raises_not_implemented_error_for_neutral_alpha(
         engine.run_execution_cycle(symbol=DEFAULT_SYMBOL, market_feed=feed)
 
     assert len(broker.submitted_orders) == 0
+    assert broker.snapshot_call_count == 1
 
 # -----------------------------------------------------------------------------
 
@@ -163,6 +169,7 @@ def test_engine_cycle_skips_processing_on_none_intent(
     engine.run_execution_cycle(symbol=DEFAULT_SYMBOL, market_feed=feed)
 
     assert len(broker.submitted_orders) == 0
+    assert broker.snapshot_call_count == 1
 
 # =============================================================================
 # -----------------------------------------------------------------------------

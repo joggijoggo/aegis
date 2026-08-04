@@ -88,6 +88,8 @@ class AegisExecutionEngine:
                 market_context = next(market_feed)
                 buffer.append(value=market_context.prices.mid_price)
 
+                broker_snapshot = self._broker_adapter.get_broker_snapshot()
+
                 exposure_intent = self._bot.evaluate(
                     market_context=market_context,
                     historical_values=buffer.to_list(),
@@ -102,13 +104,12 @@ class AegisExecutionEngine:
                 contract_specification = (
                     self._contract_registry.get_specification(symbol)
                 )
-                account_snapshot = self._broker_adapter.get_account_snapshot()
 
                 order = self._position_sizer.create_order(
                     exposure_intent=exposure_intent,
                     risk_percent=self._risk_percent,
                     contract_specification=contract_specification,
-                    account_snapshot=account_snapshot,
+                    account_snapshot=broker_snapshot.account,
                     market_context=market_context,
                 )
 
