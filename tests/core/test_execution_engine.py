@@ -21,7 +21,7 @@ from core.models import (
     ExposureIntent,
     MarketContext,
     MarketPricePoint,
-    OrderReceipt,
+    OrderGroupStatus,
     OrderStatus,
 )
 from core.position_sizer import PositionSizer
@@ -31,12 +31,14 @@ from tests.testutils import (
     FakeBot,
     FakeBrokerAdapter,
     FakeMarketFeed,
+    create_contract_registry_factory,
     create_contract_specification_factory,
     create_market_context_factory,
     create_order_factory,
+    create_order_receipt_factory,
     create_position_sizer_factory,
+    create_trade_receipt_factory,
 )
-from tests.testutils.factories import create_trade_receipt_factory
 
 # =============================================================================
 # -----------------------------------------------------------------------------
@@ -155,7 +157,7 @@ def test_engine_cycle_registers_volatile_order_group() -> None:
     recorded_group = engine._order_groups[order_id]
     assert recorded_group.group_id == order_id
     assert order_id in recorded_group.orders
-    assert recorded_group.status == OrderStatus.PENDING
+    assert recorded_group.status == OrderGroupStatus.PENDING
 
 # -----------------------------------------------------------------------------
 
@@ -272,11 +274,11 @@ def test_engine_raises_duplicate_order_group_error_on_collision() -> None:
 
 # -----------------------------------------------------------------------------
 
-def test_engine_reconciles_order_lifecycle_and_evicts_group() -> None:
-    """Ensures order receipts mutate volatile tracking records and clean RAM."""
+def test_engine_reconciles_order_lifecycle_and_maintains_active_group() -> None:
+    """Ensures parent order fulfillment transitions group to active state in RAM."""
     bot = FakeBot()
     broker = FakeBrokerAdapter()
-    registry = ContractRegistry(specifications={})
+    registry = create_contract_registry_factory()
     sizer = create_position_sizer_factory()
 
     engine = AegisExecutionEngine(
@@ -292,37 +294,34 @@ def test_engine_reconciles_order_lifecycle_and_evicts_group() -> None:
     order_id = parent_order.client_order_id
 
     assert len(engine._order_groups) == 1
-
     current_stored_group = engine._order_groups[order_id]
-    assert current_stored_group.status == OrderStatus.PENDING
+    assert current_stored_group.status == OrderGroupStatus.PENDING
 
     # Synthesize a transaction lifecycle response marking execution fulfillment
-    receipt = OrderReceipt(
-        average_execution_price=Decimal("1.08500"),
-        broker_order_id="BRK-12345",
-        client_order_id=order_id,
-        executed_quantity=Decimal("1.0"),
+    receipt = create_order_receipt_factory(
         group_id=order_id,
-        reject_reason=None,
+        client_order_id=order_id,
         status=OrderStatus.FILLED,
     )
     notification_event = BrokerEvent(
-        event_type=EventType.ORDER_NOTIFICATION, payload=receipt
+        event_type=EventType.ORDER_NOTIFICATION,
+        payload=receipt,
     )
 
     # Route transmission through the main entry point dispatcher
     engine._process_broker_event(notification_event)
 
-    # Assert binary eviction rule successfully cleared the record from memory
-    assert len(engine._order_groups) == 0
+    # Assert that the group remains alive in RAM under the active exposure flag
+    assert len(engine._order_groups) == 1
+    assert current_stored_group.status == OrderGroupStatus.ACTIVE
 
 # -----------------------------------------------------------------------------
 
-def test_engine_reconciles_trade_lifecycle_and_evicts_group() -> None:
-    """Ensures trade clearing receipts evaluate closure and clean RAM."""
+def test_engine_reconciles_parent_rejection_and_evicts_group_cleanly() -> None:
+    """Ensures parent rejection triggers immediate RAM eviction if no children exist."""
     bot = FakeBot()
     broker = FakeBrokerAdapter()
-    registry = ContractRegistry(specifications={})
+    registry = create_contract_registry_factory()
     sizer = create_position_sizer_factory()
 
     engine = AegisExecutionEngine(
@@ -332,28 +331,113 @@ def test_engine_reconciles_trade_lifecycle_and_evicts_group() -> None:
         position_sizer=sizer,
     )
 
-    # Seed the volatile execution registry with an active trading group entry
-    parent_order = create_order_factory()
+    # Seed the volatile execution registry with an active pending trade intent
+    parent_order = create_order_factory(stop_loss_price=None, take_profit_price=None)
     engine._register_order_group(parent_order)
-    group_id = parent_order.client_order_id
+    order_id = parent_order.client_order_id
 
-    assert len(engine._order_groups) == 1
-
-    # Synthesize a trade notification clearing event marking final closure
-    receipt = create_trade_receipt_factory(
-        group_id=group_id,
-        is_open=False,
+    # Synthesize an infrastructure failure response marking rejection
+    receipt = create_order_receipt_factory(
+        group_id=order_id,
+        client_order_id=order_id,
+        status=OrderStatus.REJECTED,
     )
     notification_event = BrokerEvent(
-        event_type=EventType.TRADE_NOTIFICATION,
+        event_type=EventType.ORDER_NOTIFICATION,
         payload=receipt,
     )
 
     # Route transmission through the main entry point dispatcher
     engine._process_broker_event(notification_event)
 
-    # Assert that the engine successfully evacuated the completed group from RAM
+    # Assert that the engine successfully evacuated the rejected group from RAM
     assert len(engine._order_groups) == 0
+
+# -----------------------------------------------------------------------------
+
+def test_engine_trade_notification_reconciliation_logic() -> None:
+    """Verifies clearing receipts evaluate authorized unwinds vs external closures."""
+    bot = FakeBot()
+    broker = FakeBrokerAdapter()
+    registry = create_contract_registry_factory()
+    sizer = create_position_sizer_factory()
+
+    # --- Scenario A: Nominal Closing Sequence (Child Fills -> Clearing Confirms) ---
+    engine_a = AegisExecutionEngine(
+        bot=bot, broker_adapter=broker, contract_registry=registry, position_sizer=sizer
+    )
+    # Inject prices to ensure the engine unfolds protective child sub-orders
+    parent_a = create_order_factory(
+        client_order_id='A1',
+        stop_loss_price=Decimal('1.0750'),
+        take_profit_price=Decimal('1.0950'),
+    )
+    engine_a._register_order_group(parent_a)
+    group_a = engine_a._order_groups['A1']
+
+    # Parent execution triggers active exposure
+    engine_a._process_broker_event(BrokerEvent(
+        event_type=EventType.ORDER_NOTIFICATION,
+        payload=create_order_receipt_factory(
+            group_id='A1', client_order_id='A1', status=OrderStatus.FILLED
+        )
+    ))
+
+    # Child protection fills triggering closing sequester state
+    engine_a._process_broker_event(BrokerEvent(
+        event_type=EventType.ORDER_NOTIFICATION,
+        payload=create_order_receipt_factory(
+            group_id='A1', client_order_id='A1-SL', status=OrderStatus.FILLED
+        )
+    ))
+    assert group_a.status == OrderGroupStatus.CLOSING
+    assert 'A1' in engine_a._order_groups
+
+    # Brother protection gets canceled cleanly post matching
+    engine_a._process_broker_event(BrokerEvent(
+        event_type=EventType.ORDER_NOTIFICATION,
+        payload=create_order_receipt_factory(
+            group_id='A1', client_order_id='A1-TP', status=OrderStatus.CANCELED
+        )
+    ))
+
+    # Clearing notification confirms inventory flat -> RAM evacuation triggered
+    engine_a._process_broker_event(BrokerEvent(
+        event_type=EventType.TRADE_NOTIFICATION,
+        payload=create_trade_receipt_factory(group_id='A1', is_open=False)
+    ))
+    assert 'A1' not in engine_a._order_groups
+
+    # --- Scenario B: Severe Rupture (Clandestine External Position Closure) ---
+    engine_b = AegisExecutionEngine(
+        bot=bot, broker_adapter=broker, contract_registry=registry, position_sizer=sizer
+    )
+    # Inject prices here as well to maintain structural consistency
+    parent_b = create_order_factory(
+        client_order_id='B1',
+        stop_loss_price=Decimal('1.0750'),
+        take_profit_price=Decimal('1.0950'),
+    )
+    engine_b._register_order_group(parent_b)
+    group_b = engine_b._order_groups['B1']
+
+    # Parent execution triggers active exposure
+    engine_b._process_broker_event(BrokerEvent(
+        event_type=EventType.ORDER_NOTIFICATION,
+        payload=create_order_receipt_factory(
+            group_id='B1', client_order_id='B1', status=OrderStatus.FILLED
+        )
+    ))
+
+    # Clearing notification arrives flat while group is ACTIVE (no child ever filled)
+    engine_b._process_broker_event(BrokerEvent(
+        event_type=EventType.TRADE_NOTIFICATION,
+        payload=create_trade_receipt_factory(group_id='B1', is_open=False)
+    ))
+
+    # Assert the engine caught the platform bypass and flagged corruption parameters
+    assert group_b.status == OrderGroupStatus.CORRUPTED
+    assert 'B1' in engine_b._order_groups
 
 # -----------------------------------------------------------------------------
 

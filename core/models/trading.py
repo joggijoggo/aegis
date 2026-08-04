@@ -7,8 +7,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 
-from core.models.enums import (
+from core.models import (
     EventType,
+    OrderGroupStatus,
     OrderSide,
     OrderStatus,
     OrderType,
@@ -68,16 +69,20 @@ class Order:
 
 @dataclass
 class OrderGroup:
-    """Composite tracking entity for an execution request and its protections.
+    """Tracking container maintaining volatile execution context records.
 
     Attributes:
-        group_id: Unique framework tracking identifier.
-        orders: Internal mapping of tracked orders indexed by client_order_id.
-        status: Core execution lifecycle state of the trading intent.
+        clearing_closed: Boolean flag confirming asset ledger inventory is flat.
+        group_id: Unique internal tracking identifier for the parent group.
+        order_statuses: Live lifecycle tracking state mapping for each order ID.
+        orders: Immutable technical specification records for each order ID.
+        status: Aggregated execution lifecycle state of the entire bracket.
     """
+    clearing_closed: bool
     group_id: str
+    order_statuses: dict[str, OrderStatus]
     orders: dict[str, Order]
-    status: OrderStatus
+    status: OrderGroupStatus
 
 # -----------------------------------------------------------------------------
 

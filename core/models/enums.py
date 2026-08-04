@@ -18,6 +18,39 @@ class EventType(Enum):
 
 # -----------------------------------------------------------------------------
 
+class OrderGroupStatus(Enum):
+    """Aggregated execution lifecycle state of an entire bracket group in RAM.
+
+    States:
+        ACTIVE: Parent order is filled; market exposure is live and protected.
+        CANCELED: Manual intervention or global cancellation finalized.
+        CLOSING: A child order has filled; position unwinding is underway.
+        COMPLETED: Cycle successfully closed out at zero remaining contracts.
+        CORRUPTED: Microstructural failure or protection rupture detected.
+        PENDING: Group instantiated; awaiting parent entrance order execution.
+        REJECTED: Parent entrance order failed or rejected upon submission.
+        REJECTING: Parent failed; group sequester waiting for child cancellations.
+    """
+    ACTIVE = 'ACTIVE'
+    CANCELED = 'CANCELED'
+    CLOSING = 'CLOSING'
+    COMPLETED = 'COMPLETED'
+    CORRUPTED = 'CORRUPTED'
+    PENDING = 'PENDING'
+    REJECTED = 'REJECTED'
+    REJECTING = 'REJECTING'
+
+    @property
+    def is_terminal(self) -> bool:
+        """Determines if the group execution cycle is completely dead or closed."""
+        return self in {
+            OrderGroupStatus.CANCELED,
+            OrderGroupStatus.COMPLETED,
+            OrderGroupStatus.REJECTED,
+        }
+
+# -----------------------------------------------------------------------------
+
 class OrderSide(Enum):
     """Enforces execution direction flags across external gateway adapters."""
     BUY = 'BUY'
@@ -26,12 +59,31 @@ class OrderSide(Enum):
 # -----------------------------------------------------------------------------
 
 class OrderStatus(Enum):
-    """Enforces execution lifecycle state tracking across broker gateways."""
+    """Atomic execution lifecycle state of a single order in the broker book.
+
+    States:
+        CANCELED: Order explicitly removed from the book before execution.
+        EXPIRED: Order validity time-limit exceeded session boundaries.
+        FILLED: Order volume fully matched and executed by the venue.
+        PARTIALLY_FILLED: Fractional execution matching partial volume.
+        PENDING: Order actively waiting in the book for market matching.
+        REJECTED: Order refused upon submission due to margin or technical rules.
+    """
     CANCELED = 'CANCELED'
+    EXPIRED = 'EXPIRED'
     FILLED = 'FILLED'
     PARTIALLY_FILLED = 'PARTIALLY_FILLED'
     PENDING = 'PENDING'
     REJECTED = 'REJECTED'
+
+    @property
+    def is_terminal(self) -> bool:
+        """Determines if the atomic execution state represents a final lifecycle boundary."""
+        return self in {
+            OrderStatus.CANCELED,
+            OrderStatus.FILLED,
+            OrderStatus.REJECTED,
+        }
 
 # -----------------------------------------------------------------------------
 
