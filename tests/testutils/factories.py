@@ -4,6 +4,7 @@ from decimal import Decimal
 from typing import Any
 import uuid
 
+from core.contract_registry import ContractRegistry
 from core.currency_converter import CurrencyConverter
 from core.models import (
     AccountSnapshot,
@@ -55,6 +56,16 @@ def create_account_snapshot_factory(**kwargs) -> AccountSnapshot:
     }
     defaults.update(kwargs)
     return AccountSnapshot(**defaults)
+
+# -----------------------------------------------------------------------------
+
+def create_contract_registry_factory(**kwargs) -> ContractRegistry:
+    """Generates a ContractRegistry instance with dynamic specification overrides."""
+    defaults = {
+        'specifications': {},
+    }
+    defaults.update(kwargs)
+    return ContractRegistry(**defaults)
 
 # -----------------------------------------------------------------------------
 
