@@ -23,7 +23,7 @@ from core.contract_registry import ContractRegistry
 from core.execution_engine import AegisExecutionEngine
 from core.models import (
     AccountSnapshot,
-    PositionLedger,
+    PositionLedgerSnapshot,
 )
 from core.position_sizer import PositionSizer
 from market_feeds.backtrader_market_feed import BacktraderMarketFeed
@@ -42,7 +42,7 @@ class DomainTelemetryRecord:
     account_snapshot: AccountSnapshot
     exposure_intent: ExposureIntent
     market_context: MarketContext
-    position_ledger: PositionLedger
+    position_ledger: PositionLedgerSnapshot
 
 # =============================================================================
 # -----------------------------------------------------------------------------

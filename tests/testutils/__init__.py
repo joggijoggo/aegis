@@ -24,7 +24,7 @@ from tests.testutils.factories import (
     create_market_context_factory as create_market_context_factory,
     create_order_factory as create_order_factory,
     create_position_factory as create_position_factory,
-    create_position_ledger_factory as create_position_ledger_factory,
+    create_position_ledger_snapshot_factory as create_position_ledger_snapshot_factory,
     create_position_sizer_factory as create_position_sizer_factory,
 )
 from tests.testutils.mocks import (

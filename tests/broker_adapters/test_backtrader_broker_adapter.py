@@ -25,7 +25,7 @@ from core.models import (
     OrderSide,
     OrderStatus,
     OrderType,
-    PositionLedger,
+    PositionLedgerSnapshot,
     PositionSide,
     TimeInForce,
 )
@@ -431,10 +431,10 @@ def test_backtrader_broker_adapter_position_ledger_parsing() -> None:
     bridge.bind_strategy(strategy)
 
     # 6. Execute the ledger parsing extraction
-    ledger = adapter.get_position_ledger()
+    ledger = adapter._get_position_ledger_snapshot()
 
     # 7. Assertions verifying mathematical and directional translations
-    assert isinstance(ledger, PositionLedger)
+    assert isinstance(ledger, PositionLedgerSnapshot)
     assert len(ledger.records) == 2  # USDJPY (flat) must be filtered out natively
 
     # Validate LONG position extraction under prefix constraints

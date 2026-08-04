@@ -52,7 +52,7 @@ class Position:
 # -----------------------------------------------------------------------------
 
 @dataclass(frozen=True)
-class PositionLedger:
+class PositionLedgerSnapshot:
     """Immutable registry of active market exposures.
 
     Attributes:
@@ -86,7 +86,7 @@ class BrokerSnapshot:
         position_ledger: The frozen registry tracking active market exposures.
     """
     account: AccountSnapshot
-    position_ledger: PositionLedger
+    position_ledger: PositionLedgerSnapshot
 
 # =============================================================================
 # -----------------------------------------------------------------------------

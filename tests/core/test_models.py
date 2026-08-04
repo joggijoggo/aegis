@@ -25,7 +25,7 @@ from core.models import (
 )
 from tests.testutils import (
     create_position_factory,
-    create_position_ledger_factory,
+    create_position_ledger_snapshot_factory,
 )
 
 # =============================================================================
@@ -198,7 +198,7 @@ def test_order_types_with_limit_bounds() -> None:
 
 # -----------------------------------------------------------------------------
 
-def test_position_ledger_filters_records_by_symbol() -> None:
+def test_position_ledger_snapshot__filters_records_by_symbol() -> None:
     """Verifies that get_positions_by_symbol successfully isolates target contracts."""
     # 1. Forge targeted positions using the factory
     pos_eurusd_1 = create_position_factory(symbol='EURUSD', ticket_id='TKT-1', side=PositionSide.LONG)
@@ -211,7 +211,7 @@ def test_position_ledger_filters_records_by_symbol() -> None:
         'TKT-2': pos_eurusd_2,
         'TKT-3': pos_gbpusd,
     }
-    ledger = create_position_ledger_factory(records=records)
+    ledger = create_position_ledger_snapshot_factory(records=records)
 
     # 3. Execute the domain query utility
     eurusd_positions = ledger.get_positions_by_symbol('EURUSD')

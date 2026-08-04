@@ -12,7 +12,7 @@ from core.models import (
     OrderSide,
     OrderType,
     Position,
-    PositionLedger,
+    PositionLedgerSnapshot,
     PositionSide,
     TimeInForce,
 )
@@ -146,13 +146,13 @@ def create_position_factory(**kwargs) -> Position:
 
 # -----------------------------------------------------------------------------
 
-def create_position_ledger_factory(**kwargs) -> PositionLedger:
-    """Generates a PositionLedger instance with dynamic keyword overrides."""
+def create_position_ledger_snapshot_factory(**kwargs) -> PositionLedgerSnapshot:
+    """Generates a PositionLedgerSnapshot instance with dynamic keyword overrides."""
     defaults = {
         'records': {},
     }
     defaults.update(kwargs)
-    return PositionLedger(**defaults)
+    return PositionLedgerSnapshot(**defaults)
 
 # -----------------------------------------------------------------------------
 
