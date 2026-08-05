@@ -245,7 +245,7 @@ def test_backtrader_broker_adapter_polling_fifo_flow_for_orders() -> None:
     mock_order = MagicMock()
     mock_order.ref = 101
     mock_order.status = bt.Order.Completed
-    mock_order.client_order_id = 'ORDER-A'
+    mock_order.info = { 'client_order_id': 'ORDER-A' }
     mock_order.executed = MagicMock()
     mock_order.executed.size.__float__.return_value = 10.0
     mock_order.executed.price.__float__.return_value = 1.2000
@@ -404,7 +404,7 @@ def test_backtrader_broker_adapter_order_clearing_parsing() -> None:
     mock_order_filled = MagicMock()
     mock_order_filled.ref = 42
     mock_order_filled.status = bt.Order.Completed
-    mock_order_filled.client_order_id = 'AEGIS-101-SL'
+    mock_order_filled.info = { 'client_order_id': 'AEGIS-101-SL' }
 
     # Secure the nested executed attributes with explicit conversion values
     mock_order_filled.executed = MagicMock()
@@ -426,26 +426,6 @@ def test_backtrader_broker_adapter_order_clearing_parsing() -> None:
     assert event_filled.payload.group_id == 'AEGIS-101'
     assert event_filled.payload.reject_reason is None
     assert event_filled.payload.state == OrderState.FILLED
-
-    # 2. Test protective edge case: completely empty client_order_id mapping
-    mock_order_rejected = MagicMock()
-    mock_order_rejected.ref = 43
-    mock_order_rejected.status = bt.Order.Margin
-    del mock_order_rejected.client_order_id  # Force fallback on getattr(..., '')
-
-    mock_order_rejected.executed = MagicMock()
-    mock_order_rejected.executed.size.__float__.return_value = 0.0
-    mock_order_rejected.executed.price.__float__.return_value = 0.0
-
-    event_rejected = adapter._translate_to_broker_event(
-        EventType.ORDER_NOTIFICATION, mock_order_rejected
-    )
-
-    assert event_rejected.payload.client_order_id == ''
-    assert event_rejected.payload.group_id == ''
-    assert event_rejected.payload.state == OrderState.REJECTED
-    assert event_rejected.payload.executed_quantity == Decimal('0.0')
-    assert event_rejected.payload.average_execution_price == Decimal('0.0')
 
 # -----------------------------------------------------------------------------
 
@@ -655,6 +635,42 @@ def test_backtrader_broker_adapter_unsupported_policies() -> None:
 
     with pytest.raises(NotImplementedError, match="TimeInForce policy 'TimeInForce.DAY' is not supported"):
         adapter.submit_order(mock_order_tif)
+
+# -----------------------------------------------------------------------------
+
+def test_backtrader_broker_adapter_translation_extraction_fallback_bug() -> None:
+    """Demonstrates the empty group_id bug when client_order_id resides in info."""
+    class StubBacktraderExecutionRecord:
+        """Manual deterministic structure replicating a raw Backtrader executed block."""
+        def __init__(self) -> None:
+            self.size: float = 0.1
+            self.price: float = 1.112
+
+    class StubBacktraderOrder:
+        """Manual rigid stub mimicking a raw Backtrader Order payload without metaclasses."""
+        def __init__(self) -> None:
+            self.status: int = 1  # Submitted state
+            self.ref: int = 1
+            self.executed = StubBacktraderExecutionRecord()
+            # Mirroring the real runtime metadata dictionary structure
+            self.info = {'client_order_id': 'AEGIS-EXPECTED-GROUP-ID'}
+
+    bridge_mock = MagicMock()
+    adapter = BacktraderBrokerAdapter(bridge=bridge_mock)
+
+    # Simulate an authentic Backtrader order structure
+    raw_order = StubBacktraderOrder()
+
+    # Invoke the translation boundary
+    event = adapter._translate_to_broker_event(
+        event_type=EventType.ORDER_NOTIFICATION,
+        raw_data=raw_order,
+    )
+
+    # Test that we extract the id from the `.info` instead of the raw order.
+    receipt = event.payload
+    assert receipt.group_id == 'AEGIS-EXPECTED-GROUP-ID'
+    assert receipt.client_order_id == 'AEGIS-EXPECTED-GROUP-ID'
 
 # =============================================================================
 # -----------------------------------------------------------------------------

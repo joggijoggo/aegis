@@ -360,7 +360,7 @@ class BacktraderBrokerAdapter(BaseBrokerAdapter):
             raw_order: bt.Order = raw_data
 
             # Preserving the raw id to know exactly which child bracket is hit
-            raw_client_id = getattr(raw_order, 'client_order_id', '') or ''
+            raw_client_id = raw_order.info['client_order_id']
 
             # Extract and clean group_id from trailing bracket suffixes
             group_id = raw_client_id
