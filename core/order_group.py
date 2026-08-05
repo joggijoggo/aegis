@@ -60,8 +60,8 @@ class OrderGroup:
             OrderState.FILLED: OrderGroupState.CORRUPTED,
             # Nominal sequence: child cancelled following the parent failure
             OrderState.CANCELED: OrderGroupState.REJECTING,
-            # Severe rupture: broker rejects the child cancellation post parent failure
-            OrderState.REJECTED: OrderGroupState.CORRUPTED,
+            # The broker might already have canceled the child order.
+            OrderState.REJECTED: OrderGroupState.REJECTING,
         },
         OrderGroupState.CANCELED: {
             # Deadlock state: cancelled groups reject late infrastructure packets
@@ -181,7 +181,7 @@ class OrderGroup:
             orders: Collection of all contingent orders belonging to this transaction.
         """
         self._parent_id: str = parent_id
-        self._clearing_closed: bool = False
+        self._clearing_closed: bool | None = None
 
         self._orders: dict[str, Order] = {}
         self._order_states: dict[str, OrderState] = {}
