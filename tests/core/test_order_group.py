@@ -8,6 +8,10 @@ from decimal import Decimal
 
 import pytest
 
+from core.exceptions import (
+    CorruptedOrderGroupError,
+    UntrackedOrderException,
+)
 from core.models import (
     OrderGroupState,
     OrderSide,
@@ -145,22 +149,56 @@ def test_order_group_unsupported_states_circuit_breaker() -> None:
 
 # -----------------------------------------------------------------------------
 
-def test_order_group_untracked_identity_passive_guard() -> None:
-    """Ensures unrecognized order identifiers exit passively without mutating memory."""
+def test_order_group_untracked_identity_circuit_breaker() -> None:
+    """Ensures unrecognized order identifiers trigger an untracked exception."""
     parent_order = create_order_factory(client_order_id='ORD-01')
     group = OrderGroup(parent_id='ORD-01', orders=[parent_order])
-
     receipt = create_order_receipt_factory(
         group_id='ORD-01',
         client_order_id='GHOST-ID',
         state=OrderState.FILLED,
     )
 
-    group.notify_order_change(receipt)
+    with pytest.raises(UntrackedOrderException, match='not found in group'):
+        group. notify_order_change(receipt)
 
     # Validate that no internal metrics have experienced drift
     assert group._state == OrderGroupState.PENDING
     assert group._order_states['ORD-01'] == OrderState.PENDING
+
+# -----------------------------------------------------------------------------
+
+def test_order_group_corrupted_state_denies_mutations() -> None:
+    """Ensures living aggregates lock completely once state moves to corrupted."""
+    parent_order = create_order_factory(client_order_id='ORD-CORRUPT')
+    group = OrderGroup(parent_id='ORD-CORRUPT', orders=[parent_order])
+
+    # Force the group into a CORRUPTED state via an unsupported event
+    receipt_unsupported = create_order_receipt_factory(
+        group_id='ORD-CORRUPT',
+        client_order_id='ORD-CORRUPT',
+        state=OrderState.PARTIALLY_FILLED,
+    )
+    with pytest.raises(NotImplementedError):
+        group.notify_order_change(receipt_unsupported)
+    assert group._state == OrderGroupState.CORRUPTED
+
+    # Assert order change mutations are now strictly blocked
+    receipt_late = create_order_receipt_factory(
+        group_id='ORD-CORRUPT',
+        client_order_id='ORD-CORRUPT',
+        state=OrderState.FILLED,
+    )
+    with pytest.raises(CorruptedOrderGroupError, match='is corrupted'):
+        group.notify_order_change(receipt_late)
+
+    # Assert trade change mutations are also strictly blocked
+    trade_receipt = create_trade_receipt_factory(
+        group_id='ORD-CORRUPT',
+        is_open=True,
+    )
+    with pytest.raises(CorruptedOrderGroupError, match='is corrupted'):
+        group.notify_trade_change(trade_receipt)
 
 # -----------------------------------------------------------------------------
 

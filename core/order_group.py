@@ -3,6 +3,10 @@
 Maintains structural integrity and execution alignment for contingent trading lifecycles.
 """
 
+from core.exceptions import (
+    CorruptedOrderGroupError,
+    UntrackedOrderException,
+)
 from core.models import (
     Order,
     OrderGroupState,
@@ -240,22 +244,32 @@ class OrderGroup:
 
 # -----------------------------------------------------------------------------
 
-    # FIXME: Freeze execution mutations if the molecular state is already CORRUPTED
     def notify_order_change(self, order_receipt: OrderReceipt) -> None:
         """Ingests an infrastructure execution receipt to update the contingent group state.
 
         Args:
             order_receipt: The incoming broker order execution receipt payload.
+
+        Raises:
+            CorruptedOrderGroupError: when the order group state is corrupted.
+            UntrackedOrderException: when the receipt order id does not belong to the group.
         """
+        if self._state == OrderGroupState.CORRUPTED:
+            raise CorruptedOrderGroupError(
+                f'Action denied: order group "{self._parent_id}" is corrupted.'
+            )
+
         if order_receipt.state in self._UNSUPPORTED_STATES:
             self._state = OrderGroupState.CORRUPTED
             raise NotImplementedError(
                 f"Order state {order_receipt.state} is not supported in the current framework."
             )
 
-        # FIXME: Replace this passive guard with an untracked order exception layout
         if order_receipt.client_order_id not in self._orders:
-            return
+            raise UntrackedOrderException(
+                f'Order "{order_receipt.client_order_id}" not found '
+                f'in group "{self._parent_id}".'
+            )
 
         self._order_states[order_receipt.client_order_id] = order_receipt.state
 
@@ -273,7 +287,15 @@ class OrderGroup:
 
         Args:
             trade_receipt: The incoming broker transaction clearing receipt payload.
+
+        Raises:
+            CorruptedOrderGroupError: when the order group state is corrupted.
         """
+        if self._state == OrderGroupState.CORRUPTED:
+            raise CorruptedOrderGroupError(
+                f'Action denied: order group "{self._parent_id}" is corrupted.'
+            )
+
         if trade_receipt.is_open:
             self._clearing_closed = False
         else:
