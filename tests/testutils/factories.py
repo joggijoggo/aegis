@@ -12,7 +12,7 @@ from core.models import (
     Order,
     OrderReceipt,
     OrderSide,
-    OrderStatus,
+    OrderState,
     OrderType,
     Position,
     PositionLedgerSnapshot,
@@ -155,7 +155,7 @@ def create_order_receipt_factory(**kwargs) -> OrderReceipt:
         'executed_quantity': Decimal('1.0'),
         'group_id': 'AEGIS-ORD-TEST',
         'reject_reason': None,
-        'status': OrderStatus.FILLED,
+        'state': OrderState.FILLED,
     }
     defaults.update(kwargs)
     return OrderReceipt(**defaults)
