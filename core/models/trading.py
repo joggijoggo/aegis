@@ -9,7 +9,6 @@ from decimal import Decimal
 
 from core.models import (
     EventType,
-    OrderGroupState,
     OrderSide,
     OrderState,
     OrderType,
@@ -64,25 +63,6 @@ class Order:
     price: Decimal | None = None
     stop_loss_price: Decimal | None = None
     take_profit_price: Decimal | None = None
-
-# -----------------------------------------------------------------------------
-
-@dataclass
-class OrderGroup:
-    """Tracking container maintaining volatile execution context records.
-
-    Attributes:
-        clearing_closed: Boolean flag confirming asset ledger inventory is flat.
-        group_id: Unique internal tracking identifier for the parent group.
-        order_states: Live lifecycle tracking state mapping for each order ID.
-        orders: Immutable technical specification records for each order ID.
-        state: Aggregated execution lifecycle state of the entire bracket.
-    """
-    clearing_closed: bool
-    group_id: str
-    order_states: dict[str, OrderState]
-    orders: dict[str, Order]
-    state: OrderGroupState
 
 # -----------------------------------------------------------------------------
 

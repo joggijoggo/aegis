@@ -19,7 +19,6 @@ from core.models import (
     BrokerEvent,
     EventType,
     Order,
-    OrderGroup,
     OrderGroupState,
     OrderReceipt,
     OrderSide,
@@ -27,6 +26,7 @@ from core.models import (
     OrderType,
     TradeReceipt,
 )
+from core.order_group import OrderGroup
 from core.position_sizer import PositionSizer
 from market_feeds.base_market_feed import BaseMarketFeed
 
