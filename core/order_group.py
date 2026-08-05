@@ -16,15 +16,7 @@ from core.models import (
 # =============================================================================
 
 class OrderGroup:
-    """Operational entity enforcing structural alignment over contingent orders.
-
-    Attributes:
-        group_id: Unique internal tracking identifier identical to the parent order ID.
-        clearing_closed: Boolean flag confirming asset ledger inventory is flat.
-        order_states: Live lifecycle tracking state mapping for each registered order ID.
-        orders: Technical specification index records for each registered order ID.
-        state: Aggregated execution lifecycle state of the entire contingent group.
-    """
+    """Operational entity enforcing structural alignment over contingent orders."""
 
     # Defines the absolute Child Transition Matrix:
     #
@@ -188,65 +180,63 @@ class OrderGroup:
             parent_id: Unique internal identifier of the execution entry order.
             orders: Collection of all contingent orders belonging to this transaction.
         """
-        self.group_id: str = parent_id
-        self.clearing_closed: bool = False
+        self._parent_id: str = parent_id
+        self._clearing_closed: bool = False
 
-        # Build the technical specification index and initialize atomic states
-        self.orders: dict[str, Order] = {}
-        self.order_states: dict[str, OrderState] = {}
+        self._orders: dict[str, Order] = {}
+        self._order_states: dict[str, OrderState] = {}
 
         for order in orders:
-            self.orders[order.client_order_id] = order
-            self.order_states[order.client_order_id] = OrderState.PENDING
+            self._orders[order.client_order_id] = order
+            self._order_states[order.client_order_id] = OrderState.PENDING
 
-        # Enforce strict birth invariant protection
-        if self.group_id not in self.orders:
+        if self._parent_id not in self._orders:
             raise ValueError(
-                f"Initialization failed: parent order '{self.group_id}' "
-                f"is missing from the provided orders collection."
+                f'Initialization failed: parent order \'{self._parent_id}\' '
+                f'is missing from the provided orders collection.'
             )
 
-        self.state: OrderGroupState = OrderGroupState.PENDING
+        self._state: OrderGroupState = OrderGroupState.PENDING
 
 # -----------------------------------------------------------------------------
 
     def _evaluate_eviction_barrier(self) -> None:
         """Evaluates microstructural and accounting conditions to finalize the lifecycle."""
         # Handle automated triggers for complete opening failures
-        if self.state == OrderGroupState.REJECTING:
+        if self._state == OrderGroupState.REJECTING:
             all_children_terminal = True
 
-            for order_id, order_state in self.order_states.items():
-                if order_id != self.group_id and not order_state.is_terminal:
+            for order_id, order_state in self._order_states.items():
+                if order_id != self._parent_id and not order_state.is_terminal:
                     all_children_terminal = False
                     break
 
             if all_children_terminal:
-                parent_state = self.order_states.get(self.group_id)
+                parent_state = self._order_states.get(self._parent_id)
 
                 if parent_state == OrderState.CANCELED:
-                    self.state = OrderGroupState.CANCELED
+                    self._state = OrderGroupState.CANCELED
                 elif parent_state == OrderState.REJECTED:
-                    self.state = OrderGroupState.REJECTED
+                    self._state = OrderGroupState.REJECTED
 
         # Handle automated triggers for nominal closing sequences
-        if self.state == OrderGroupState.CLOSING and self.clearing_closed:
+        if self._state == OrderGroupState.CLOSING and self._clearing_closed:
             all_orders_terminal = True
 
-            for order_state in self.order_states.values():
+            for order_state in self._order_states.values():
                 if not order_state.is_terminal:
                     all_orders_terminal = False
                     break
 
             if all_orders_terminal:
-                self.state = OrderGroupState.COMPLETED
+                self._state = OrderGroupState.COMPLETED
 
 # -----------------------------------------------------------------------------
 
     @property
     def is_terminal(self) -> bool:
         """Determines if the group execution cycle is completely dead or closed."""
-        return self.state.is_terminal
+        return self._state.is_terminal
 
 # -----------------------------------------------------------------------------
 
@@ -258,21 +248,21 @@ class OrderGroup:
             order_receipt: The incoming broker order execution receipt payload.
         """
         if order_receipt.state in self._UNSUPPORTED_STATES:
-            self.state = OrderGroupState.CORRUPTED
+            self._state = OrderGroupState.CORRUPTED
             raise NotImplementedError(
                 f"Order state {order_receipt.state} is not supported in the current framework."
             )
 
         # FIXME: Replace this passive guard with an untracked order exception layout
-        if order_receipt.client_order_id not in self.orders:
+        if order_receipt.client_order_id not in self._orders:
             return
 
-        self.order_states[order_receipt.client_order_id] = order_receipt.state
+        self._order_states[order_receipt.client_order_id] = order_receipt.state
 
-        is_parent = order_receipt.client_order_id == self.group_id
+        is_parent = order_receipt.client_order_id == self._parent_id
         target_matrix = self._PARENT_MATRIX if is_parent else self._CHILD_MATRIX
 
-        self.state = target_matrix[self.state][order_receipt.state]
+        self._state = target_matrix[self._state][order_receipt.state]
 
         self._evaluate_eviction_barrier()
 
@@ -285,21 +275,21 @@ class OrderGroup:
             trade_receipt: The incoming broker transaction clearing receipt payload.
         """
         if trade_receipt.is_open:
-            self.clearing_closed = False
+            self._clearing_closed = False
         else:
-            self.clearing_closed = True
+            self._clearing_closed = True
 
             # Verify if any contingent protection order has triggered the unwind
             any_child_filled = False
-            for order_id, order_state in self.order_states.items():
-                if order_id != self.group_id and order_state == OrderState.FILLED:
+            for order_id, order_state in self._order_states.items():
+                if order_id != self._parent_id and order_state == OrderState.FILLED:
                     any_child_filled = True
                     break
 
             # Handle clandestine external closure vs authorized nominal sequence
-            if not any_child_filled and self.state == OrderGroupState.ACTIVE:
-                self.state = OrderGroupState.CORRUPTED
-            elif self.state == OrderGroupState.CLOSING or any_child_filled:
+            if not any_child_filled and self._state == OrderGroupState.ACTIVE:
+                self._state = OrderGroupState.CORRUPTED
+            elif self._state == OrderGroupState.CLOSING or any_child_filled:
                 self._evaluate_eviction_barrier()
 
 # =============================================================================

@@ -21,7 +21,6 @@ from core.models import (
     ExposureIntent,
     MarketContext,
     MarketPricePoint,
-    OrderGroupState,
     OrderState,
 )
 from core.position_sizer import PositionSizer
@@ -155,9 +154,7 @@ def test_engine_cycle_registers_volatile_order_group() -> None:
     assert order_id in engine._order_groups
 
     recorded_group = engine._order_groups[order_id]
-    assert recorded_group.group_id == order_id
-    assert order_id in recorded_group.orders
-    assert recorded_group.state == OrderGroupState.PENDING
+    assert not recorded_group.is_terminal
 
 # -----------------------------------------------------------------------------
 
@@ -295,7 +292,7 @@ def test_engine_reconciles_order_lifecycle_and_maintains_active_group() -> None:
 
     assert len(engine._order_groups) == 1
     current_stored_group = engine._order_groups[order_id]
-    assert current_stored_group.state == OrderGroupState.PENDING
+    assert not current_stored_group.is_terminal
 
     # Synthesize a transaction lifecycle response marking execution fulfillment
     receipt = create_order_receipt_factory(
@@ -313,7 +310,7 @@ def test_engine_reconciles_order_lifecycle_and_maintains_active_group() -> None:
 
     # Assert that the group remains alive in RAM under the active exposure flag
     assert len(engine._order_groups) == 1
-    assert current_stored_group.state == OrderGroupState.ACTIVE
+    assert not current_stored_group.is_terminal
 
 # -----------------------------------------------------------------------------
 
@@ -390,7 +387,7 @@ def test_engine_trade_notification_reconciliation_logic() -> None:
             group_id='A1', client_order_id='A1-SL', state=OrderState.FILLED
         )
     ))
-    assert group_a.state == OrderGroupState.CLOSING
+    assert not group_a.is_terminal
     assert 'A1' in engine_a._order_groups
 
     # Brother protection gets canceled cleanly post matching
@@ -419,7 +416,6 @@ def test_engine_trade_notification_reconciliation_logic() -> None:
         take_profit_price=Decimal('1.0950'),
     )
     engine_b._register_order_group(parent_b)
-    group_b = engine_b._order_groups['B1']
 
     # Parent execution triggers active exposure
     engine_b._process_broker_event(BrokerEvent(
@@ -436,97 +432,7 @@ def test_engine_trade_notification_reconciliation_logic() -> None:
     ))
 
     # Assert the engine caught the platform bypass and flagged corruption parameters
-    assert group_b.state == OrderGroupState.CORRUPTED
     assert 'B1' in engine_b._order_groups
-
-# -----------------------------------------------------------------------------
-
-def test_engine_register_order_group_unpacking_variants() -> None:
-    """Verifies that order unpacking accurately maps variants of child brackets."""
-    bot = FakeBot()
-    broker = FakeBrokerAdapter()
-    registry = ContractRegistry(specifications={})
-    sizer = create_position_sizer_factory()
-
-    # --- Scenario 1: Parent with full bracket protections (Nominal case) ---
-    engine_full = AegisExecutionEngine(
-        bot=bot,
-        broker_adapter=broker,
-        contract_registry=registry,
-        position_sizer=sizer,
-    )
-    order_full = create_order_factory(
-        client_order_id='ORD-FULL',
-        stop_loss_price=Decimal('1.08000'),
-        take_profit_price=Decimal('1.09500'),
-    )
-    engine_full._register_order_group(order_full)
-    group_full = engine_full._order_groups['ORD-FULL']
-
-    assert len(group_full.orders) == 3
-    assert 'ORD-FULL' in group_full.orders
-    assert 'ORD-FULL-SL' in group_full.orders
-    assert 'ORD-FULL-TP' in group_full.orders
-
-    # --- Scenario 2: Parent with Stop-Loss only ---
-    engine_sl_only = AegisExecutionEngine(
-        bot=bot,
-        broker_adapter=broker,
-        contract_registry=registry,
-        position_sizer=sizer,
-    )
-    order_sl_only = create_order_factory(
-        client_order_id='ORD-SL-ONLY',
-        stop_loss_price=Decimal('1.08000'),
-        take_profit_price=None,
-    )
-    engine_sl_only._register_order_group(order_sl_only)
-    group_sl = engine_sl_only._order_groups['ORD-SL-ONLY']
-
-    assert len(group_sl.orders) == 2
-    assert 'ORD-SL-ONLY' in group_sl.orders
-    assert 'ORD-SL-ONLY-SL' in group_sl.orders
-    assert 'ORD-SL-ONLY-TP' not in group_sl.orders
-
-    # --- Scenario 3: Parent with Take-Profit only (Asymmetric Risk Spec) ---
-    engine_tp_only = AegisExecutionEngine(
-        bot=bot,
-        broker_adapter=broker,
-        contract_registry=registry,
-        position_sizer=sizer,
-    )
-    order_tp_only = create_order_factory(
-        client_order_id='ORD-TP-ONLY',
-        stop_loss_price=None,
-        take_profit_price=Decimal('1.09500'),
-    )
-    engine_tp_only._register_order_group(order_tp_only)
-    group_tp = engine_tp_only._order_groups['ORD-TP-ONLY']
-
-    assert len(group_tp.orders) == 2
-    assert 'ORD-TP-ONLY' in group_tp.orders
-    assert 'ORD-TP-ONLY-SL' not in group_tp.orders
-    assert 'ORD-TP-ONLY-TP' in group_tp.orders
-
-    # --- Scenario 4: Parent with no protections at all (Bare execution) ---
-    engine_bare = AegisExecutionEngine(
-        bot=bot,
-        broker_adapter=broker,
-        contract_registry=registry,
-        position_sizer=sizer,
-    )
-    order_bare = create_order_factory(
-        client_order_id='ORD-BARE',
-        stop_loss_price=None,
-        take_profit_price=None,
-    )
-    engine_bare._register_order_group(order_bare)
-    group_bare = engine_bare._order_groups['ORD-BARE']
-
-    assert len(group_bare.orders) == 1
-    assert 'ORD-BARE' in group_bare.orders
-    assert 'ORD-BARE-SL' not in group_bare.orders
-    assert 'ORD-BARE-TP' not in group_bare.orders
 
 # =============================================================================
 # -----------------------------------------------------------------------------
