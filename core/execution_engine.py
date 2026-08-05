@@ -14,6 +14,7 @@ from core.contract_registry import ContractRegistry
 from core.exceptions import (
     DuplicateOrderGroupError,
     UnsupportedBrokerEventError,
+    UntrackedOrderException,
 )
 from core.models import (
     BrokerEvent,
@@ -67,10 +68,14 @@ class AegisExecutionEngine:
 
         Args:
             receipt: The transaction lifecycle response from the broker venue book.
+
+        Raises:
+            UntrackedOrderException: When the receipt group identifier is unrecognized.
         """
-        # FIXME: Replace this passive guard with an untracked order exception layout
         if receipt.group_id not in self._order_groups:
-            return
+            raise UntrackedOrderException(
+                f'Broker event mismatch: order group "{receipt.group_id}" is untracked.'
+            )
 
         order_group = self._order_groups[receipt.group_id]
         order_group.notify_order_change(receipt)
@@ -85,10 +90,14 @@ class AegisExecutionEngine:
 
         Args:
             receipt: The incoming broker clearing receipt for the target execution group.
+
+        Raises:
+            UntrackedOrderException: When the receipt group identifier is unrecognized.
         """
-        # FIXME: Replace this passive guard with an untracked order exception layout
         if receipt.group_id not in self._order_groups:
-            return
+            raise UntrackedOrderException(
+                f'Broker event mismatch: order group "{receipt.group_id}" is untracked.'
+            )
 
         order_group = self._order_groups[receipt.group_id]
         order_group.notify_trade_change(receipt)

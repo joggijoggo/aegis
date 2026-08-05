@@ -13,6 +13,7 @@ from core.contract_registry import ContractRegistry
 from core.exceptions import (
     DuplicateOrderGroupError,
     UnsupportedBrokerEventError,
+    UntrackedOrderException,
 )
 from core.execution_engine import AegisExecutionEngine
 from core.models import (
@@ -247,6 +248,35 @@ def test_engine_handles_unsupported_broker_event_error() -> None:
 
 # -----------------------------------------------------------------------------
 
+def test_engine_order_notification_untracked_circuit_breaker() -> None:
+    """Ensures unrecognized order receipts trigger an immediate execution halt."""
+    bot = FakeBot()
+    broker = FakeBrokerAdapter()
+    registry = create_contract_registry_factory()
+    sizer = create_position_sizer_factory()
+
+    engine = AegisExecutionEngine(
+        bot=bot,
+        broker_adapter=broker,
+        contract_registry=registry,
+        position_sizer=sizer,
+    )
+
+    # Inject an order receipt with an unrecognized group identifier
+    receipt = create_order_receipt_factory(
+        group_id='GHOST-GROUP',
+        client_order_id='GHOST-ORDER',
+    )
+    corrupted_event = BrokerEvent(
+        event_type=EventType.ORDER_NOTIFICATION,
+        payload=receipt,
+    )
+
+    with pytest.raises(UntrackedOrderException, match='is untracked'):
+        engine._process_broker_event(corrupted_event)
+
+# -----------------------------------------------------------------------------
+
 def test_engine_raises_duplicate_order_group_error_on_collision() -> None:
     """Ensures that registering an existing group ID triggers an immediate halt."""
     bot = FakeBot()
@@ -433,6 +463,35 @@ def test_engine_trade_notification_reconciliation_logic() -> None:
 
     # Assert the engine caught the platform bypass and flagged corruption parameters
     assert 'B1' in engine_b._order_groups
+
+# -----------------------------------------------------------------------------
+
+def test_engine_trade_notification_untracked_circuit_breaker() -> None:
+    """Ensures unrecognized trade receipts trigger an immediate execution halt."""
+    bot = FakeBot()
+    broker = FakeBrokerAdapter()
+    registry = create_contract_registry_factory()
+    sizer = create_position_sizer_factory()
+
+    engine = AegisExecutionEngine(
+        bot=bot,
+        broker_adapter=broker,
+        contract_registry=registry,
+        position_sizer=sizer,
+    )
+
+    # Inject a trade receipt with an unrecognized group identifier
+    receipt = create_trade_receipt_factory(
+        group_id='GHOST-GROUP',
+        is_open=True,
+    )
+    corrupted_event = BrokerEvent(
+        event_type=EventType.TRADE_NOTIFICATION,
+        payload=receipt,
+    )
+
+    with pytest.raises(UntrackedOrderException, match='is untracked'):
+        engine._process_broker_event(corrupted_event)
 
 # =============================================================================
 # -----------------------------------------------------------------------------
