@@ -21,8 +21,8 @@ from core.models import (
     ExposureIntent,
     MarketContext,
     MarketPricePoint,
-    OrderGroupStatus,
-    OrderStatus,
+    OrderGroupState,
+    OrderState,
 )
 from core.position_sizer import PositionSizer
 from tests.testutils import (
@@ -157,7 +157,7 @@ def test_engine_cycle_registers_volatile_order_group() -> None:
     recorded_group = engine._order_groups[order_id]
     assert recorded_group.group_id == order_id
     assert order_id in recorded_group.orders
-    assert recorded_group.status == OrderGroupStatus.PENDING
+    assert recorded_group.state == OrderGroupState.PENDING
 
 # -----------------------------------------------------------------------------
 
@@ -295,13 +295,13 @@ def test_engine_reconciles_order_lifecycle_and_maintains_active_group() -> None:
 
     assert len(engine._order_groups) == 1
     current_stored_group = engine._order_groups[order_id]
-    assert current_stored_group.status == OrderGroupStatus.PENDING
+    assert current_stored_group.state == OrderGroupState.PENDING
 
     # Synthesize a transaction lifecycle response marking execution fulfillment
     receipt = create_order_receipt_factory(
         group_id=order_id,
         client_order_id=order_id,
-        status=OrderStatus.FILLED,
+        state=OrderState.FILLED,
     )
     notification_event = BrokerEvent(
         event_type=EventType.ORDER_NOTIFICATION,
@@ -313,7 +313,7 @@ def test_engine_reconciles_order_lifecycle_and_maintains_active_group() -> None:
 
     # Assert that the group remains alive in RAM under the active exposure flag
     assert len(engine._order_groups) == 1
-    assert current_stored_group.status == OrderGroupStatus.ACTIVE
+    assert current_stored_group.state == OrderGroupState.ACTIVE
 
 # -----------------------------------------------------------------------------
 
@@ -340,7 +340,7 @@ def test_engine_reconciles_parent_rejection_and_evicts_group_cleanly() -> None:
     receipt = create_order_receipt_factory(
         group_id=order_id,
         client_order_id=order_id,
-        status=OrderStatus.REJECTED,
+        state=OrderState.REJECTED,
     )
     notification_event = BrokerEvent(
         event_type=EventType.ORDER_NOTIFICATION,
@@ -379,7 +379,7 @@ def test_engine_trade_notification_reconciliation_logic() -> None:
     engine_a._process_broker_event(BrokerEvent(
         event_type=EventType.ORDER_NOTIFICATION,
         payload=create_order_receipt_factory(
-            group_id='A1', client_order_id='A1', status=OrderStatus.FILLED
+            group_id='A1', client_order_id='A1', state=OrderState.FILLED
         )
     ))
 
@@ -387,17 +387,17 @@ def test_engine_trade_notification_reconciliation_logic() -> None:
     engine_a._process_broker_event(BrokerEvent(
         event_type=EventType.ORDER_NOTIFICATION,
         payload=create_order_receipt_factory(
-            group_id='A1', client_order_id='A1-SL', status=OrderStatus.FILLED
+            group_id='A1', client_order_id='A1-SL', state=OrderState.FILLED
         )
     ))
-    assert group_a.status == OrderGroupStatus.CLOSING
+    assert group_a.state == OrderGroupState.CLOSING
     assert 'A1' in engine_a._order_groups
 
     # Brother protection gets canceled cleanly post matching
     engine_a._process_broker_event(BrokerEvent(
         event_type=EventType.ORDER_NOTIFICATION,
         payload=create_order_receipt_factory(
-            group_id='A1', client_order_id='A1-TP', status=OrderStatus.CANCELED
+            group_id='A1', client_order_id='A1-TP', state=OrderState.CANCELED
         )
     ))
 
@@ -425,7 +425,7 @@ def test_engine_trade_notification_reconciliation_logic() -> None:
     engine_b._process_broker_event(BrokerEvent(
         event_type=EventType.ORDER_NOTIFICATION,
         payload=create_order_receipt_factory(
-            group_id='B1', client_order_id='B1', status=OrderStatus.FILLED
+            group_id='B1', client_order_id='B1', state=OrderState.FILLED
         )
     ))
 
@@ -436,7 +436,7 @@ def test_engine_trade_notification_reconciliation_logic() -> None:
     ))
 
     # Assert the engine caught the platform bypass and flagged corruption parameters
-    assert group_b.status == OrderGroupStatus.CORRUPTED
+    assert group_b.state == OrderGroupState.CORRUPTED
     assert 'B1' in engine_b._order_groups
 
 # -----------------------------------------------------------------------------

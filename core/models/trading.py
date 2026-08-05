@@ -9,9 +9,9 @@ from decimal import Decimal
 
 from core.models import (
     EventType,
-    OrderGroupStatus,
+    OrderGroupState,
     OrderSide,
-    OrderStatus,
+    OrderState,
     OrderType,
     TimeInForce,
 )
@@ -74,15 +74,15 @@ class OrderGroup:
     Attributes:
         clearing_closed: Boolean flag confirming asset ledger inventory is flat.
         group_id: Unique internal tracking identifier for the parent group.
-        order_statuses: Live lifecycle tracking state mapping for each order ID.
+        order_states: Live lifecycle tracking state mapping for each order ID.
         orders: Immutable technical specification records for each order ID.
-        status: Aggregated execution lifecycle state of the entire bracket.
+        state: Aggregated execution lifecycle state of the entire bracket.
     """
     clearing_closed: bool
     group_id: str
-    order_statuses: dict[str, OrderStatus]
+    order_states: dict[str, OrderState]
     orders: dict[str, Order]
-    status: OrderGroupStatus
+    state: OrderGroupState
 
 # -----------------------------------------------------------------------------
 
@@ -97,7 +97,7 @@ class OrderReceipt:
         executed_quantity: Explicit volume executed during the current infrastructure tick.
         group_id: Unique internal tracking identifier for the parent execution group.
         reject_reason: Broker rejection cause description or None.
-        status: Order execution lifecycle state.
+        state: Order execution lifecycle state.
     """
     average_execution_price: Decimal | None
     broker_order_id: str | None
@@ -105,7 +105,7 @@ class OrderReceipt:
     executed_quantity: Decimal
     group_id: str
     reject_reason: str | None
-    status: OrderStatus
+    state: OrderState
 
 # -----------------------------------------------------------------------------
 

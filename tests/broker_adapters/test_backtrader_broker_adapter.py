@@ -24,7 +24,7 @@ from core.models import (
     Order,
     OrderReceipt,
     OrderSide,
-    OrderStatus,
+    OrderState,
     OrderType,
     PositionLedgerSnapshot,
     PositionSide,
@@ -425,7 +425,7 @@ def test_backtrader_broker_adapter_order_clearing_parsing() -> None:
     assert event_filled.payload.executed_quantity == Decimal('100.0')
     assert event_filled.payload.group_id == 'AEGIS-101'
     assert event_filled.payload.reject_reason is None
-    assert event_filled.payload.status == OrderStatus.FILLED
+    assert event_filled.payload.state == OrderState.FILLED
 
     # 2. Test protective edge case: completely empty client_order_id mapping
     mock_order_rejected = MagicMock()
@@ -443,7 +443,7 @@ def test_backtrader_broker_adapter_order_clearing_parsing() -> None:
 
     assert event_rejected.payload.client_order_id == ''
     assert event_rejected.payload.group_id == ''
-    assert event_rejected.payload.status == OrderStatus.REJECTED
+    assert event_rejected.payload.state == OrderState.REJECTED
     assert event_rejected.payload.executed_quantity == Decimal('0.0')
     assert event_rejected.payload.average_execution_price == Decimal('0.0')
 

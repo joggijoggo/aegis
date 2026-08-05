@@ -18,7 +18,7 @@ class EventType(Enum):
 
 # -----------------------------------------------------------------------------
 
-class OrderGroupStatus(Enum):
+class OrderGroupState(Enum):
     """Aggregated execution lifecycle state of an entire bracket group in RAM.
 
     States:
@@ -44,9 +44,9 @@ class OrderGroupStatus(Enum):
     def is_terminal(self) -> bool:
         """Determines if the group execution cycle is completely dead or closed."""
         return self in {
-            OrderGroupStatus.CANCELED,
-            OrderGroupStatus.COMPLETED,
-            OrderGroupStatus.REJECTED,
+            OrderGroupState.CANCELED,
+            OrderGroupState.COMPLETED,
+            OrderGroupState.REJECTED,
         }
 
 # -----------------------------------------------------------------------------
@@ -58,7 +58,7 @@ class OrderSide(Enum):
 
 # -----------------------------------------------------------------------------
 
-class OrderStatus(Enum):
+class OrderState(Enum):
     """Atomic execution lifecycle state of a single order in the broker book.
 
     States:
@@ -80,9 +80,9 @@ class OrderStatus(Enum):
     def is_terminal(self) -> bool:
         """Determines if the atomic execution state represents a final lifecycle boundary."""
         return self in {
-            OrderStatus.CANCELED,
-            OrderStatus.FILLED,
-            OrderStatus.REJECTED,
+            OrderState.CANCELED,
+            OrderState.FILLED,
+            OrderState.REJECTED,
         }
 
 # -----------------------------------------------------------------------------

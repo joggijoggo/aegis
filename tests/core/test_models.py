@@ -18,7 +18,7 @@ from core.models import (
     Order,
     OrderReceipt,
     OrderSide,
-    OrderStatus,
+    OrderState,
     OrderType,
     PositionSide,
     TimeInForce,
@@ -117,11 +117,11 @@ def test_order_receipt_immutability() -> None:
         executed_quantity=Decimal('1.0'),
         group_id='AEGIS-TEST-ID',
         reject_reason=None,
-        status=OrderStatus.PENDING,
+        state=OrderState.PENDING,
     )
 
     with pytest.raises(FrozenInstanceError):
-        receipt.status = OrderStatus.FILLED  # type: ignore
+        receipt.state = OrderState.FILLED  # type: ignore
 
 # -----------------------------------------------------------------------------
 

@@ -22,7 +22,7 @@ from core.models import (
     Order,
     OrderReceipt,
     OrderSide,
-    OrderStatus,
+    OrderState,
     OrderType,
     Position,
     PositionLedgerSnapshot,
@@ -217,27 +217,27 @@ class BacktraderBrokerAdapter(BaseBrokerAdapter):
 
 # -----------------------------------------------------------------------------
 
-    def _parse_order_status(self, raw_status: int) -> OrderStatus:
+    def _parse_order_status(self, raw_status: int) -> OrderState:
         """Maps Backtrader infrastructure order statuses to core domain enums.
 
         Args:
             raw_status: Integer representation of Backtrader order states.
 
         Returns:
-            The corresponding core OrderStatus enumeration value.
+            The corresponding core OrderState enumeration value.
         """
         mapping = {
-            bt.Order.Created: OrderStatus.PENDING,
-            bt.Order.Submitted: OrderStatus.PENDING,
-            bt.Order.Accepted: OrderStatus.PENDING,
-            bt.Order.Partial: OrderStatus.PARTIALLY_FILLED,
-            bt.Order.Completed: OrderStatus.FILLED,
-            bt.Order.Canceled: OrderStatus.CANCELED,
-            bt.Order.Expired: OrderStatus.CANCELED,
-            bt.Order.Margin: OrderStatus.REJECTED,
-            bt.Order.Rejected: OrderStatus.REJECTED,
+            bt.Order.Created: OrderState.PENDING,
+            bt.Order.Submitted: OrderState.PENDING,
+            bt.Order.Accepted: OrderState.PENDING,
+            bt.Order.Partial: OrderState.PARTIALLY_FILLED,
+            bt.Order.Completed: OrderState.FILLED,
+            bt.Order.Canceled: OrderState.CANCELED,
+            bt.Order.Expired: OrderState.CANCELED,
+            bt.Order.Margin: OrderState.REJECTED,
+            bt.Order.Rejected: OrderState.REJECTED,
         }
-        return mapping.get(raw_status, OrderStatus.REJECTED)
+        return mapping.get(raw_status, OrderState.REJECTED)
 
 # -----------------------------------------------------------------------------
 
@@ -367,7 +367,7 @@ class BacktraderBrokerAdapter(BaseBrokerAdapter):
             if group_id.endswith('-SL') or group_id.endswith('-TP'):
                 group_id = group_id[:-3]
 
-            status = self._parse_order_status(raw_order.status)
+            state = self._parse_order_status(raw_order.status)
 
             # Tight type mutation pipeline: float -> str -> Decimal
             executed_size = Decimal(str(float(raw_order.executed.size)))
@@ -381,7 +381,7 @@ class BacktraderBrokerAdapter(BaseBrokerAdapter):
                 executed_quantity=executed_size,
                 group_id=group_id,
                 reject_reason=None,
-                status=status,
+                state=state,
             )
         elif event_type == EventType.TRADE_NOTIFICATION:
             raw_trade: bt.Trade = raw_data

@@ -20,10 +20,10 @@ from core.models import (
     EventType,
     Order,
     OrderGroup,
-    OrderGroupStatus,
+    OrderGroupState,
     OrderReceipt,
     OrderSide,
-    OrderStatus,
+    OrderState,
     OrderType,
     TradeReceipt,
 )
@@ -75,9 +75,9 @@ class AegisExecutionEngine:
             AssertionError: If the internal transition matrix structure is incomplete.
         """
         # Enforce strict preventive circuit breaker for unhandled edge states
-        if receipt.status in {OrderStatus.PARTIALLY_FILLED, OrderStatus.EXPIRED}:
+        if receipt.state in {OrderState.PARTIALLY_FILLED, OrderState.EXPIRED}:
             raise NotImplementedError(
-                f'Order state {receipt.status} is not supported in the current framework.'
+                f'Order state {receipt.state} is not supported in the current framework.'
             )
 
         # FIXME: Replace this passive guard with an untracked order exception layout
@@ -90,165 +90,165 @@ class AegisExecutionEngine:
         if receipt.client_order_id not in order_group.orders:
             return
 
-        # Update the precise atomic status tracking for this specific order
-        order_group.order_statuses[receipt.client_order_id] = receipt.status
+        # Update the precise atomic state tracking for this specific order
+        order_group.order_states[receipt.client_order_id] = receipt.state
 
         # Define the absolute Parent Transition Matrix: Actuel x Ordre -> Cible
-        # Layout: {CurrentGroupStatus: {IncomingOrderStatus: TargetGroupStatus}}
+        # Layout: {CurrentGroupState: {IncomingOrderState: TargetGroupState}}
         parent_matrix = {
-            OrderGroupStatus.PENDING: {
+            OrderGroupState.PENDING: {
                 # Nominal state where the parent entrance order sits in the venue book
-                OrderStatus.PENDING: OrderGroupStatus.PENDING,
+                OrderState.PENDING: OrderGroupState.PENDING,
                 # Nominal entrance execution opening the trade exposure
-                OrderStatus.FILLED: OrderGroupStatus.ACTIVE,
+                OrderState.FILLED: OrderGroupState.ACTIVE,
                 # Parent order cancelled before matching; aborting the cycle cleanly
-                OrderStatus.CANCELED: OrderGroupStatus.REJECTING,
+                OrderState.CANCELED: OrderGroupState.REJECTING,
                 # Parent order rejected due to margin or venue rules; aborting cycle
-                OrderStatus.REJECTED: OrderGroupStatus.REJECTING,
+                OrderState.REJECTED: OrderGroupState.REJECTING,
             },
-            OrderGroupStatus.ACTIVE: {
+            OrderGroupState.ACTIVE: {
                 # Severe rupture: parent order goes back to pending while group is active
-                OrderStatus.PENDING: OrderGroupStatus.CORRUPTED,
+                OrderState.PENDING: OrderGroupState.CORRUPTED,
                 # Severe rupture: duplicate entry execution received for an active trade
-                OrderStatus.FILLED: OrderGroupStatus.CORRUPTED,
+                OrderState.FILLED: OrderGroupState.CORRUPTED,
                 # Severe rupture: parent order cancelled post matching; data mismatch
-                OrderStatus.CANCELED: OrderGroupStatus.CORRUPTED,
+                OrderState.CANCELED: OrderGroupState.CORRUPTED,
                 # Severe rupture: parent order rejected post matching; data mismatch
-                OrderStatus.REJECTED: OrderGroupStatus.CORRUPTED,
+                OrderState.REJECTED: OrderGroupState.CORRUPTED,
             },
-            OrderGroupStatus.CLOSING: {
+            OrderGroupState.CLOSING: {
                 # Severe rupture: parent order goes back to pending while trade is closing
-                OrderStatus.PENDING: OrderGroupStatus.CORRUPTED,
+                OrderState.PENDING: OrderGroupState.CORRUPTED,
                 # Severe rupture: duplicate entry fill received during unwinding phase
-                OrderStatus.FILLED: OrderGroupStatus.CORRUPTED,
+                OrderState.FILLED: OrderGroupState.CORRUPTED,
                 # Severe rupture: parent order cancelled during unwinding phase
-                OrderStatus.CANCELED: OrderGroupStatus.CORRUPTED,
+                OrderState.CANCELED: OrderGroupState.CORRUPTED,
                 # Severe rupture: parent order rejected during unwinding phase
-                OrderStatus.REJECTED: OrderGroupStatus.CORRUPTED,
+                OrderState.REJECTED: OrderGroupState.CORRUPTED,
             },
-            OrderGroupStatus.REJECTING: {
+            OrderGroupState.REJECTING: {
                 # Severe rupture: failed parent signals an impossible pending state late
-                OrderStatus.PENDING: OrderGroupStatus.CORRUPTED,
+                OrderState.PENDING: OrderGroupState.CORRUPTED,
                 # Severe rupture: parent fills late while children are being purged
-                OrderStatus.FILLED: OrderGroupStatus.CORRUPTED,
+                OrderState.FILLED: OrderGroupState.CORRUPTED,
                 # Severe rupture: redundant cancel received for an already failing parent
-                OrderStatus.CANCELED: OrderGroupStatus.CORRUPTED,
+                OrderState.CANCELED: OrderGroupState.CORRUPTED,
                 # Severe rupture: redundant reject received for an already failing parent
-                OrderStatus.REJECTED: OrderGroupStatus.CORRUPTED,
+                OrderState.REJECTED: OrderGroupState.CORRUPTED,
             },
-            OrderGroupStatus.CANCELED: {
+            OrderGroupState.CANCELED: {
                 # Deadlock state: cancelled groups reject late infrastructure packets
-                OrderStatus.PENDING: OrderGroupStatus.CORRUPTED,
-                OrderStatus.FILLED: OrderGroupStatus.CORRUPTED,
-                OrderStatus.CANCELED: OrderGroupStatus.CORRUPTED,
-                OrderStatus.REJECTED: OrderGroupStatus.CORRUPTED,
+                OrderState.PENDING: OrderGroupState.CORRUPTED,
+                OrderState.FILLED: OrderGroupState.CORRUPTED,
+                OrderState.CANCELED: OrderGroupState.CORRUPTED,
+                OrderState.REJECTED: OrderGroupState.CORRUPTED,
             },
-            OrderGroupStatus.COMPLETED: {
+            OrderGroupState.COMPLETED: {
                 # Deadlock state: completed groups reject late infrastructure packets
-                OrderStatus.PENDING: OrderGroupStatus.CORRUPTED,
-                OrderStatus.FILLED: OrderGroupStatus.CORRUPTED,
-                OrderStatus.CANCELED: OrderGroupStatus.CORRUPTED,
-                OrderStatus.REJECTED: OrderGroupStatus.CORRUPTED,
+                OrderState.PENDING: OrderGroupState.CORRUPTED,
+                OrderState.FILLED: OrderGroupState.CORRUPTED,
+                OrderState.CANCELED: OrderGroupState.CORRUPTED,
+                OrderState.REJECTED: OrderGroupState.CORRUPTED,
             },
-            OrderGroupStatus.REJECTED: {
+            OrderGroupState.REJECTED: {
                 # Deadlock state: rejected groups reject late infrastructure packets
-                OrderStatus.PENDING: OrderGroupStatus.CORRUPTED,
-                OrderStatus.FILLED: OrderGroupStatus.CORRUPTED,
-                OrderStatus.CANCELED: OrderGroupStatus.CORRUPTED,
-                OrderStatus.REJECTED: OrderGroupStatus.CORRUPTED,
+                OrderState.PENDING: OrderGroupState.CORRUPTED,
+                OrderState.FILLED: OrderGroupState.CORRUPTED,
+                OrderState.CANCELED: OrderGroupState.CORRUPTED,
+                OrderState.REJECTED: OrderGroupState.CORRUPTED,
             },
-            OrderGroupStatus.CORRUPTED: {
+            OrderGroupState.CORRUPTED: {
                 # Deadlock state: once corrupted, the group blocks all modifications
-                OrderStatus.PENDING: OrderGroupStatus.CORRUPTED,
-                OrderStatus.FILLED: OrderGroupStatus.CORRUPTED,
-                OrderStatus.CANCELED: OrderGroupStatus.CORRUPTED,
-                OrderStatus.REJECTED: OrderGroupStatus.CORRUPTED,
+                OrderState.PENDING: OrderGroupState.CORRUPTED,
+                OrderState.FILLED: OrderGroupState.CORRUPTED,
+                OrderState.CANCELED: OrderGroupState.CORRUPTED,
+                OrderState.REJECTED: OrderGroupState.CORRUPTED,
             },
         }
 
         # Define the absolute Child Transition Matrix: Actuel x Ordre -> Cible
         child_matrix = {
-            OrderGroupStatus.PENDING: {
+            OrderGroupState.PENDING: {
                 # Nominal state where protection orders sit waiting in the book
-                OrderStatus.PENDING: OrderGroupStatus.PENDING,
+                OrderState.PENDING: OrderGroupState.PENDING,
                 # Rupture: protection fills before parent entry executed; upside down
-                OrderStatus.FILLED: OrderGroupStatus.CORRUPTED,
+                OrderState.FILLED: OrderGroupState.CORRUPTED,
                 # Severe rupture: protection cancelled before parent entry is executed
-                OrderStatus.CANCELED: OrderGroupStatus.CORRUPTED,
+                OrderState.CANCELED: OrderGroupState.CORRUPTED,
                 # Severe rupture: protection rejected before parent entry is executed
-                OrderStatus.REJECTED: OrderGroupStatus.CORRUPTED,
+                OrderState.REJECTED: OrderGroupState.CORRUPTED,
             },
-            OrderGroupStatus.ACTIVE: {
+            OrderGroupState.ACTIVE: {
                 # Nominal invariant where active protections monitor exposure
-                OrderStatus.PENDING: OrderGroupStatus.ACTIVE,
+                OrderState.PENDING: OrderGroupState.ACTIVE,
                 # Nominal protection hit; position unwinding initiated under closing
-                OrderStatus.FILLED: OrderGroupStatus.CLOSING,
+                OrderState.FILLED: OrderGroupState.CLOSING,
                 # Severe rupture: live protection cancelled; exposure left naked
-                OrderStatus.CANCELED: OrderGroupStatus.CORRUPTED,
+                OrderState.CANCELED: OrderGroupState.CORRUPTED,
                 # Severe rupture: live protection rejected by broker; exposure naked
-                OrderStatus.REJECTED: OrderGroupStatus.CORRUPTED,
+                OrderState.REJECTED: OrderGroupState.CORRUPTED,
             },
-            OrderGroupStatus.CLOSING: {
+            OrderGroupState.CLOSING: {
                 # Severe rupture: brother protection remains pending during closing
-                OrderStatus.PENDING: OrderGroupStatus.CORRUPTED,
+                OrderState.PENDING: OrderGroupState.CORRUPTED,
                 # Severe rupture: brother protection fills during closing; double execution
-                OrderStatus.FILLED: OrderGroupStatus.CORRUPTED,
+                OrderState.FILLED: OrderGroupState.CORRUPTED,
                 # Nominal sequence: brother protection cancelled successfully post unwind
-                OrderStatus.CANCELED: OrderGroupStatus.CLOSING,
+                OrderState.CANCELED: OrderGroupState.CLOSING,
                 # Severe rupture: broker rejects the protection cancellation during closing
-                OrderStatus.REJECTED: OrderGroupStatus.CORRUPTED,
+                OrderState.REJECTED: OrderGroupState.CORRUPTED,
             },
-            OrderGroupStatus.REJECTING: {
+            OrderGroupState.REJECTING: {
                 # Severe rupture: child signals a pending state after parent failure
-                OrderStatus.PENDING: OrderGroupStatus.CORRUPTED,
+                OrderState.PENDING: OrderGroupState.CORRUPTED,
                 # Severe rupture: child protection fills while parent entry failed
-                OrderStatus.FILLED: OrderGroupStatus.CORRUPTED,
+                OrderState.FILLED: OrderGroupState.CORRUPTED,
                 # Nominal sequence: child cancelled following the parent failure
-                OrderStatus.CANCELED: OrderGroupStatus.REJECTING,
+                OrderState.CANCELED: OrderGroupState.REJECTING,
                 # Severe rupture: broker rejects the child cancellation post parent failure
-                OrderStatus.REJECTED: OrderGroupStatus.CORRUPTED,
+                OrderState.REJECTED: OrderGroupState.CORRUPTED,
             },
-            OrderGroupStatus.CANCELED: {
+            OrderGroupState.CANCELED: {
                 # Deadlock state: cancelled groups reject late infrastructure packets
-                OrderStatus.PENDING: OrderGroupStatus.CORRUPTED,
-                OrderStatus.FILLED: OrderGroupStatus.CORRUPTED,
-                OrderStatus.CANCELED: OrderGroupStatus.CORRUPTED,
-                OrderStatus.REJECTED: OrderGroupStatus.CORRUPTED,
+                OrderState.PENDING: OrderGroupState.CORRUPTED,
+                OrderState.FILLED: OrderGroupState.CORRUPTED,
+                OrderState.CANCELED: OrderGroupState.CORRUPTED,
+                OrderState.REJECTED: OrderGroupState.CORRUPTED,
             },
-            OrderGroupStatus.COMPLETED: {
+            OrderGroupState.COMPLETED: {
                 # Deadlock state: completed groups reject late infrastructure packets
-                OrderStatus.PENDING: OrderGroupStatus.CORRUPTED,
-                OrderStatus.FILLED: OrderGroupStatus.CORRUPTED,
-                OrderStatus.CANCELED: OrderGroupStatus.CORRUPTED,
-                OrderStatus.REJECTED: OrderGroupStatus.CORRUPTED,
+                OrderState.PENDING: OrderGroupState.CORRUPTED,
+                OrderState.FILLED: OrderGroupState.CORRUPTED,
+                OrderState.CANCELED: OrderGroupState.CORRUPTED,
+                OrderState.REJECTED: OrderGroupState.CORRUPTED,
             },
-            OrderGroupStatus.REJECTED: {
+            OrderGroupState.REJECTED: {
                 # Deadlock state: rejected groups reject late infrastructure packets
-                OrderStatus.PENDING: OrderGroupStatus.CORRUPTED,
-                OrderStatus.FILLED: OrderGroupStatus.CORRUPTED,
-                OrderStatus.CANCELED: OrderGroupStatus.CORRUPTED,
-                OrderStatus.REJECTED: OrderGroupStatus.CORRUPTED,
+                OrderState.PENDING: OrderGroupState.CORRUPTED,
+                OrderState.FILLED: OrderGroupState.CORRUPTED,
+                OrderState.CANCELED: OrderGroupState.CORRUPTED,
+                OrderState.REJECTED: OrderGroupState.CORRUPTED,
             },
-            OrderGroupStatus.CORRUPTED: {
+            OrderGroupState.CORRUPTED: {
                 # Deadlock state: once corrupted, the group blocks all modifications
-                OrderStatus.PENDING: OrderGroupStatus.CORRUPTED,
-                OrderStatus.FILLED: OrderGroupStatus.CORRUPTED,
-                OrderStatus.CANCELED: OrderGroupStatus.CORRUPTED,
-                OrderStatus.REJECTED: OrderGroupStatus.CORRUPTED,
+                OrderState.PENDING: OrderGroupState.CORRUPTED,
+                OrderState.FILLED: OrderGroupState.CORRUPTED,
+                OrderState.CANCELED: OrderGroupState.CORRUPTED,
+                OrderState.REJECTED: OrderGroupState.CORRUPTED,
             },
         }
 
         # Defensive runtime safeguard: validate full matrix coverage against ourselves
-        monitored_order_statuses = {
-            state for state in OrderStatus
-            if state not in {OrderStatus.PARTIALLY_FILLED, OrderStatus.EXPIRED}
+        monitored_order_states = {
+            state for state in OrderState
+            if state not in {OrderState.PARTIALLY_FILLED, OrderState.EXPIRED}
         }
         for matrix_layout in (parent_matrix, child_matrix):
-            for group_state in OrderGroupStatus:
+            for group_state in OrderGroupState:
                 assert group_state in matrix_layout, (
                     f'Defensive Error: {group_state} missing from matrix definitions.'
                 )
-                for order_state in monitored_order_statuses:
+                for order_state in monitored_order_states:
                     assert order_state in matrix_layout[group_state], (
                         f'Defensive Error: Mapping for ({group_state}, {order_state}) '
                         f'is missing from transition layout.'
@@ -259,28 +259,28 @@ class AegisExecutionEngine:
         target_matrix = parent_matrix if is_parent else child_matrix
 
         # Execute the deterministic state transition mutation step
-        order_group.status = target_matrix[order_group.status][receipt.status]
+        order_group.state = target_matrix[order_group.state][receipt.state]
 
         # Evaluate automated RAM eviction triggers for complete opening failures
-        if order_group.status == OrderGroupStatus.REJECTING:
+        if order_group.state == OrderGroupState.REJECTING:
             all_children_terminal = True
-            for ord_id, ord_status in order_group.order_statuses.items():
-                if ord_id != order_group.group_id and not ord_status.is_terminal:
+            for ord_id, order_state in order_group.order_states.items():
+                if ord_id != order_group.group_id and not order_state.is_terminal:
                     all_children_terminal = False
                     break
             if all_children_terminal:
-                order_group.status = OrderGroupStatus.REJECTED
+                order_group.state = OrderGroupState.REJECTED
                 del self._order_groups[receipt.group_id]
 
         # Evaluate automated RAM eviction triggers for asynchronous closing races
-        if order_group.status == OrderGroupStatus.CLOSING and order_group.clearing_closed:
+        if order_group.state == OrderGroupState.CLOSING and order_group.clearing_closed:
             all_orders_terminal = True
-            for ord_status in order_group.order_statuses.values():
-                if not ord_status.is_terminal:
+            for order_state in order_group.order_states.values():
+                if not order_state.is_terminal:
                     all_orders_terminal = False
                     break
             if all_orders_terminal:
-                order_group.status = OrderGroupStatus.COMPLETED
+                order_group.state = OrderGroupState.COMPLETED
                 del self._order_groups[receipt.group_id]
 
 # -----------------------------------------------------------------------------
@@ -303,27 +303,27 @@ class AegisExecutionEngine:
         else:
             order_group.clearing_closed = True
 
-            # Scan the atomic order statuses to determine if an unwind was authorized
+            # Scan the atomic order states to determine if an unwind was authorized
             any_child_filled = False
-            for ord_id, ord_status in order_group.order_statuses.items():
-                if ord_id != order_group.group_id and ord_status == OrderStatus.FILLED:
+            for ord_id, order_state in order_group.order_states.items():
+                if ord_id != order_group.group_id and order_state == OrderState.FILLED:
                     any_child_filled = True
                     break
 
             # Handle asymmetric scenarios based on atomic execution tracking evidence
-            if not any_child_filled and order_group.status == OrderGroupStatus.ACTIVE:
+            if not any_child_filled and order_group.state == OrderGroupState.ACTIVE:
                 # Severe rupture: position closed externally with no child order matching
-                order_group.status = OrderGroupStatus.CORRUPTED
+                order_group.state = OrderGroupState.CORRUPTED
 
-            elif order_group.status == OrderGroupStatus.CLOSING or any_child_filled:
+            elif order_group.state == OrderGroupState.CLOSING or any_child_filled:
                 # Nominal sequence: evaluate memory eviction if all orders are terminal
                 all_orders_terminal = True
-                for ord_status in order_group.order_statuses.values():
-                    if not ord_status.is_terminal:
+                for order_state in order_group.order_states.values():
+                    if not order_state.is_terminal:
                         all_orders_terminal = False
                         break
                 if all_orders_terminal:
-                    order_group.status = OrderGroupStatus.COMPLETED
+                    order_group.state = OrderGroupState.COMPLETED
                     del self._order_groups[receipt.group_id]
 
 # -----------------------------------------------------------------------------
@@ -395,15 +395,15 @@ class AegisExecutionEngine:
             )
 
         # Initialize the atomic state mapping with all orders in PENDING state
-        order_statuses = {ord_id: OrderStatus.PENDING for ord_id in group_orders}
+        order_states = {ord_id: OrderState.PENDING for ord_id in group_orders}
 
         # Open and commit the unified tracking ledger entry in volatile memory
         order_group = OrderGroup(
             clearing_closed=False,
             group_id=order.client_order_id,
-            order_statuses=order_statuses,
+            order_states=order_states,
             orders=group_orders,
-            status=OrderGroupStatus.PENDING,
+            state=OrderGroupState.PENDING,
         )
 
         self._order_groups[order.client_order_id] = order_group

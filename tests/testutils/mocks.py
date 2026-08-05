@@ -12,7 +12,7 @@ from core.models import (
     ExposureIntent,
     MarketContext,
     Order,
-    OrderStatus,
+    OrderState,
     PositionLedgerSnapshot,
 )
 from market_feeds.base_market_feed import BaseMarketFeed
@@ -116,7 +116,7 @@ class FakeBrokerAdapter(BaseBrokerAdapter):
             client_order_id=order.client_order_id,
             executed_quantity=order.quantity,
             group_id=order.client_order_id,
-            status=OrderStatus.PENDING,
+            state=OrderState.PENDING,
         )
         broker_event = BrokerEvent(
             event_type=EventType.ORDER_NOTIFICATION,
