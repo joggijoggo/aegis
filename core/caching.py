@@ -20,8 +20,8 @@ class HistoricalBuffer:
         Args:
             max_size: Maximum number of elements allowed in the buffer.
         """
-        if max_size <= 0:
-            raise ValueError("Buffer maximum size must be greater than zero.")
+        if max_size < 0:
+            raise ValueError("Buffer maximum size must be greater than or equal to zero.")
 
         self._buffer: deque[float] = deque(maxlen=max_size)
 

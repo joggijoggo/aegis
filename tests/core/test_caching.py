@@ -50,12 +50,13 @@ def test_historical_buffer_returns_pure_float_list() -> None:
 # -----------------------------------------------------------------------------
 
 def test_historical_buffer_validation_on_initialization() -> None:
-    """Ensures non-positive size bounds trigger an immediate ValueError."""
-    with pytest.raises(ValueError, match="Buffer maximum size must be greater than zero"):
-        HistoricalBuffer(max_size=0)
+    """Ensures negative size bounds trigger an immediate ValueError."""
+    with pytest.raises(ValueError, match="Buffer maximum size must be greater than or equal to zero"):
+        HistoricalBuffer(max_size=-1)
 
-    with pytest.raises(ValueError, match="Buffer maximum size must be greater than zero"):
-        HistoricalBuffer(max_size=-5)
+    # Verify that zero capacity is now successfully allowed
+    buffer = HistoricalBuffer(max_size=0)
+    assert buffer.to_list() == []
 
 # =============================================================================
 # -----------------------------------------------------------------------------

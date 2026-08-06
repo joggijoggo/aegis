@@ -11,8 +11,10 @@ from abc import (
 
 from core.models import (
     AccountSnapshot,
+    BrokerEvent,
+    BrokerSnapshot,
     Order,
-    OrderReceipt,
+    PositionLedgerSnapshot,
 )
 
 # =============================================================================
@@ -25,7 +27,7 @@ class BaseBrokerAdapter(ABC):
 # -----------------------------------------------------------------------------
 
     @abstractmethod
-    def get_account_snapshot(self) -> AccountSnapshot:
+    def _get_account_snapshot(self) -> AccountSnapshot:
         """Gets the current account snapshot.
 
         Returns:
@@ -39,17 +41,51 @@ class BaseBrokerAdapter(ABC):
 # -----------------------------------------------------------------------------
 
     @abstractmethod
-    def submit_order(self, order: Order) -> OrderReceipt:
-        """Submits the order to the broker.
-
-        Args:
-            order: The execution order details.
+    def _get_position_ledger_snapshot(self) -> PositionLedgerSnapshot:
+        """Retrieves the immutable ledger of all currently active market exposures.
 
         Returns:
-            The execution order receipt.
+            PositionLedgerSnapshot instance containing open positions indexed by ticket_id.
+        """
+        pass
 
-        Raises:
-            BrokerConnectionError: Broker connection failure.
+# -----------------------------------------------------------------------------
+
+    @abstractmethod
+    def get_broker_snapshot(self) -> BrokerSnapshot:
+        """Retrieves the unified temporal snapshot of account metrics and market exposures.
+
+        Returns:
+            A frozen BrokerSnapshot containing account and ledger snapshots.
+        """
+        pass
+
+# -----------------------------------------------------------------------------
+
+    @abstractmethod
+    def submit_order(self, order: Order) -> None:
+        """Submits the order to the broker..
+
+        Args:
+            order: The order request.
+        """
+        pass
+
+# -----------------------------------------------------------------------------
+
+    @abstractmethod
+    def has_pending_events(self) -> bool:
+        """Indicates whether unread broker events are available."""
+        pass
+
+# -----------------------------------------------------------------------------
+
+    @abstractmethod
+    def poll_event(self) -> BrokerEvent:
+        """Returns the next pending broker event.
+
+        Returns:
+            The retrieved broker event.
         """
         pass
 

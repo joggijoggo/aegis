@@ -1,13 +1,16 @@
 """Aegis Framework - Shared Pytest Environment Fixtures."""
 
-from decimal import Decimal
 import pytest
 
 from core.contract_registry import ContractRegistry
 from core.currency_converter import CurrencyConverter
 from core.position_sizer import PositionSizer
 from tests.testutils.constants import DEFAULT_SYMBOL
-from tests.testutils.factories import create_contract_specification_factory
+from tests.testutils.factories import (
+    create_contract_specification_factory,
+    create_currency_converter_factory,
+    create_position_sizer_factory,
+)
 
 # =============================================================================
 # -----------------------------------------------------------------------------
@@ -23,18 +26,26 @@ def contract_registry() -> ContractRegistry:
 
 @pytest.fixture
 def currency_converter() -> CurrencyConverter:
-    """Pre-populated currency converter locked to a unit exchange rate."""
-    converter = CurrencyConverter()
-    converter.update_rate(pair='EURUSD', rate=Decimal('1.00'))
-    converter.update_rate(pair='USDEUR', rate=Decimal('1.00'))
-    return converter
+    """Pre-populated currency converter locked to a unit exchange rate.
+
+    Returns:
+        A standardized CurrencyConverter shared fixture instance.
+    """
+    return create_currency_converter_factory()
 
 # -----------------------------------------------------------------------------
 
 @pytest.fixture
-def position_sizer(currency_converter) -> PositionSizer:  # pylint: disable=redefined-outer-name
-    """Configured position sizer execution service."""
-    return PositionSizer(currency_converter=currency_converter)
+def position_sizer(currency_converter: CurrencyConverter) -> PositionSizer:  # pylint: disable=redefined-outer-name
+    """Configured position sizer execution service.
+
+    Args:
+        currency_converter: The resolved currency translation service fixture.
+
+    Returns:
+        A configured PositionSizer execution service shared fixture instance.
+    """
+    return create_position_sizer_factory(currency_converter=currency_converter)
 
 # =============================================================================
 # -----------------------------------------------------------------------------
