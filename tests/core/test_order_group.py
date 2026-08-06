@@ -548,3 +548,227 @@ def test_order_group_premature_child_ghost_fill_before_parent() -> None:
 # =============================================================================
 # -----------------------------------------------------------------------------
 # =============================================================================
+
+# ---[ ACCESSORS
+
+# -----------------------------------------------------------------------------
+
+def test_order_group_retrieves_parent_order_nominally() -> None:
+    """Verify that get_parent_order returns the root order anchoring the group."""
+    parent_order = create_order_factory(client_order_id='ORDER_ROOT_123')
+    order_group = OrderGroup(parent_id='ORDER_ROOT_123', orders=[parent_order])
+
+    extracted_order = order_group.get_parent_order()
+
+    assert extracted_order.client_order_id == 'ORDER_ROOT_123'
+    assert extracted_order == parent_order
+
+# -----------------------------------------------------------------------------
+
+def test_order_group_is_cancelable_in_initial_pending_state() -> None:
+    """Verify that a fresh pending group with untouched clearing allows cancellation."""
+    parent_order = create_order_factory(client_order_id='ORDER_123')
+    order_group = OrderGroup(parent_id='ORDER_123', orders=[parent_order])
+
+    order_group._state = OrderGroupState.PENDING
+    order_group._clearing_closed = None
+
+    assert order_group.is_cancelable()
+    assert not order_group.is_closable()
+
+# -----------------------------------------------------------------------------
+
+def test_order_group_denies_cancellation_on_open_clearing_race_condition() -> None:
+    """Verify that cancellation is barred if clearing opens before book updates state."""
+    parent_order = create_order_factory(client_order_id='ORDER_123')
+    order_group = OrderGroup(parent_id='ORDER_123', orders=[parent_order])
+
+    order_group._state = OrderGroupState.PENDING
+    order_group._clearing_closed = False
+
+    assert not order_group.is_cancelable()
+
+# -----------------------------------------------------------------------------
+
+def test_order_group_allows_liquidation_in_nominal_active_state() -> None:
+    """Verify that a nominal active group with open exposure permits market liquidation."""
+    parent_order = create_order_factory(client_order_id='ORDER_123')
+    order_group = OrderGroup(parent_id='ORDER_123', orders=[parent_order])
+
+    order_group._state = OrderGroupState.ACTIVE
+    order_group._clearing_closed = False
+
+    assert order_group.is_closable()
+    assert not order_group.is_cancelable()
+
+# -----------------------------------------------------------------------------
+
+def test_order_group_allows_liquidation_on_open_clearing_race_condition() -> None:
+    """Verify that liquidation is allowed if clearing opens before book updates state."""
+    parent_order = create_order_factory(client_order_id='ORDER_123')
+    order_group = OrderGroup(parent_id='ORDER_123', orders=[parent_order])
+
+    order_group._state = OrderGroupState.PENDING
+    order_group._clearing_closed = False
+
+    assert order_group.is_closable()
+
+# -----------------------------------------------------------------------------
+
+def test_order_group_denies_liquidation_on_closed_clearing_race_condition() -> None:
+    """Verify that liquidation is barred if clearing closes before book updates state."""
+    parent_order = create_order_factory(client_order_id='ORDER_123')
+    order_group = OrderGroup(parent_id='ORDER_123', orders=[parent_order])
+
+    order_group._state = OrderGroupState.ACTIVE
+    order_group._clearing_closed = True
+
+    assert not order_group.is_closable()
+
+# -----------------------------------------------------------------------------
+
+def test_order_group_denies_liquidation_while_already_closing() -> None:
+    """Verify that liquidation is barred if the group is already in CLOSING state."""
+    parent_order = create_order_factory(client_order_id='ORDER_123')
+    order_group = OrderGroup(parent_id='ORDER_123', orders=[parent_order])
+
+    order_group._state = OrderGroupState.CLOSING
+    order_group._clearing_closed = False
+
+    assert not order_group.is_closable()
+
+# -----------------------------------------------------------------------------
+
+def test_order_group_denies_liquidation_while_rejecting() -> None:
+    """Verify that liquidation is barred if the group is in REJECTING state."""
+    parent_order = create_order_factory(client_order_id='ORDER_123')
+    order_group = OrderGroup(parent_id='ORDER_123', orders=[parent_order])
+
+    order_group._state = OrderGroupState.REJECTING
+    order_group._clearing_closed = None
+
+    assert not order_group.is_closable()
+
+# -----------------------------------------------------------------------------
+
+def test_order_group_denies_liquidation_in_terminal_completed_state() -> None:
+    """Verify that liquidation is barred if the group is in COMPLETED state."""
+    parent_order = create_order_factory(client_order_id='ORDER_123')
+    order_group = OrderGroup(parent_id='ORDER_123', orders=[parent_order])
+
+    order_group._state = OrderGroupState.COMPLETED
+    order_group._clearing_closed = True
+
+    assert not order_group.is_closable()
+
+# -----------------------------------------------------------------------------
+
+def test_order_group_denies_nominal_liquidation_while_corrupted() -> None:
+    """Verify that automated nominal liquidation is barred if the group is corrupted."""
+    parent_order = create_order_factory(client_order_id='ORDER_123')
+    order_group = OrderGroup(parent_id='ORDER_123', orders=[parent_order])
+
+    order_group._state = OrderGroupState.CORRUPTED
+    order_group._clearing_closed = False
+
+    assert not order_group.is_closable()
+
+# -----------------------------------------------------------------------------
+
+def test_order_group_denies_cancellation_in_active_state() -> None:
+    """Verify that a classical cancellation request is barred once the group is active."""
+    parent_order = create_order_factory(client_order_id='ORDER_123')
+    order_group = OrderGroup(parent_id='ORDER_123', orders=[parent_order])
+
+    order_group._state = OrderGroupState.ACTIVE
+    order_group._clearing_closed = False
+
+    assert not order_group.is_cancelable()
+
+# -----------------------------------------------------------------------------
+
+def test_order_group_allows_liquidation_on_book_priority_asynchronism() -> None:
+    """Verify that liquidation is permitted if book reaches active state before clearing."""
+    parent_order = create_order_factory(client_order_id='ORDER_123')
+    order_group = OrderGroup(parent_id='ORDER_123', orders=[parent_order])
+
+    order_group._state = OrderGroupState.ACTIVE
+    order_group._clearing_closed = None
+
+    assert order_group.is_closable()
+
+# -----------------------------------------------------------------------------
+
+def test_order_group_denies_cancellation_if_clearing_is_already_closed() -> None:
+    """Verify that cancellation is barred if clearing signals closure while state is pending."""
+    parent_order = create_order_factory(client_order_id='ORDER_123')
+    order_group = OrderGroup(parent_id='ORDER_123', orders=[parent_order])
+
+    order_group._state = OrderGroupState.PENDING
+    order_group._clearing_closed = True
+
+    assert not order_group.is_cancelable()
+
+# -----------------------------------------------------------------------------
+
+def test_order_group_denies_cancellation_while_already_closing() -> None:
+    """Verify that cancellation is barred if the group has transitioned to CLOSING."""
+    parent_order = create_order_factory(client_order_id='ORDER_123')
+    order_group = OrderGroup(parent_id='ORDER_123', orders=[parent_order])
+
+    order_group._state = OrderGroupState.CLOSING
+    order_group._clearing_closed = None
+
+    assert not order_group.is_cancelable()
+
+# -----------------------------------------------------------------------------
+
+def test_order_group_denies_liquidation_in_terminal_rejected_state() -> None:
+    """Verify that market liquidation is barred if the group is dead-on-arrival."""
+    parent_order = create_order_factory(client_order_id='ORDER_123')
+    order_group = OrderGroup(parent_id='ORDER_123', orders=[parent_order])
+
+    order_group._state = OrderGroupState.REJECTED
+    order_group._clearing_closed = None
+
+    assert not order_group.is_closable()
+
+# -----------------------------------------------------------------------------
+
+def test_order_group_denies_cancellation_in_terminal_rejected_state() -> None:
+    """Verify that a cancellation command is barred if the group is already rejected."""
+    parent_order = create_order_factory(client_order_id='ORDER_123')
+    order_group = OrderGroup(parent_id='ORDER_123', orders=[parent_order])
+
+    order_group._state = OrderGroupState.REJECTED
+    order_group._clearing_closed = None
+
+    assert not order_group.is_cancelable()
+
+# -----------------------------------------------------------------------------
+
+def test_order_group_denies_cancellation_on_book_active_priority() -> None:
+    """Verify that cancellation is barred once book reaches active state regardless of clearing."""
+    parent_order = create_order_factory(client_order_id='ORDER_123')
+    order_group = OrderGroup(parent_id='ORDER_123', orders=[parent_order])
+
+    order_group._state = OrderGroupState.ACTIVE
+    order_group._clearing_closed = None
+
+    assert not order_group.is_cancelable()
+
+# -----------------------------------------------------------------------------
+
+def test_order_group_denies_cancellation_while_rejecting_with_clearing_latency() -> None:
+    """Verify that cancellation is barred if the group is in REJECTING state with late clearing."""
+    parent_order = create_order_factory(client_order_id='ORDER_123')
+    order_group = OrderGroup(parent_id='ORDER_123', orders=[parent_order])
+
+    order_group._state = OrderGroupState.REJECTING
+    order_group._clearing_closed = None
+
+    assert not order_group.is_cancelable()
+
+# =============================================================================
+# -----------------------------------------------------------------------------
+# =============================================================================
