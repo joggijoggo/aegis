@@ -59,6 +59,11 @@ class MissingExchangeRateError(AegisError):
 
 # -----------------------------------------------------------------------------
 
+class NettingRestrictionError(AegisError):
+    """Trading bot execution concurrency violation under strict netting rules."""
+
+# -----------------------------------------------------------------------------
+
 class StrategyError(AegisError):
     """Exception for strategy and signal calculation anomalies."""
 
