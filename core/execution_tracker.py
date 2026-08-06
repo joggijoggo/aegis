@@ -5,8 +5,14 @@ Tracks active transaction groups to isolate individual bot market exposure.
 
 from dataclasses import replace
 
-from core.exceptions import NettingRestrictionError
+from core.exceptions import (
+    NettingRestrictionError,
+    UnsupportedBrokerEventError,
+    UntrackedOrderException,
+)
 from core.models import (
+    BrokerEvent,
+    EventType,
     Order,
     OrderSide,
     OrderType,
@@ -25,6 +31,27 @@ class ExecutionTracker:
     def __init__(self) -> None:
         """Initialize an empty execution tracking ledger."""
         self._executions: dict[str, OrderGroup] = {}
+        self._order_id_to_bot_id: dict[str, str] = {}
+
+# -----------------------------------------------------------------------------
+
+    def _clear_execution_context(self, bot_id: str) -> None:
+        """Purge all structural tracking references from internal RAM structures.
+
+        Args:
+            bot_id: The unique identifier of the target trading bot.
+        """
+        # Reverse lookup since order group does not expose its order.
+        keys_to_remove = [
+            order_id
+            for order_id, mapped_bot_id in self._order_id_to_bot_id.items()
+            if mapped_bot_id == bot_id
+        ]
+
+        for order_id in keys_to_remove:
+            self._order_id_to_bot_id.pop(order_id, None)
+
+        self._executions.pop(bot_id, None)
 
 # -----------------------------------------------------------------------------
 
@@ -38,6 +65,46 @@ class ExecutionTracker:
             True if an active execution exists, False otherwise.
         """
         return bot_id in self._executions
+
+# -----------------------------------------------------------------------------
+
+    def process_broker_event(self, broker_event: BrokerEvent) -> None:
+        """Process an incoming broker event to update or clear execution states.
+
+        Args:
+            broker_event: The structural broker notification to evaluate.
+        """
+        valid_event_type = [EventType.ORDER_NOTIFICATION, EventType.TRADE_NOTIFICATION]
+
+        if broker_event.event_type not in valid_event_type:
+            raise UnsupportedBrokerEventError(
+                f"Received unhandled or corrupted event type: {broker_event.event_type}"
+            )
+
+        receipt = broker_event.payload
+        client_order_id = None
+
+        # TODO: Remove this block once TRADE_NOTIFICATION is unified with ORDER_NOTIFICATION.
+        if broker_event.event_type == EventType.ORDER_NOTIFICATION:
+            client_order_id = receipt.client_order_id
+        elif broker_event.event_type == EventType.TRADE_NOTIFICATION:
+            client_order_id = receipt.group_id
+
+        if client_order_id not in self._order_id_to_bot_id:
+            raise UntrackedOrderException(
+                f"Broker event mismatch: order identity '{client_order_id}' is untracked."
+            )
+
+        bot_id = self._order_id_to_bot_id[client_order_id]
+        order_group = self._executions[bot_id]
+
+        if broker_event.event_type == EventType.ORDER_NOTIFICATION:
+            order_group.notify_order_change(receipt)
+        elif broker_event.event_type == EventType.TRADE_NOTIFICATION:
+            order_group.notify_trade_change(receipt)
+
+        if order_group.is_terminal:
+            self._clear_execution_context(bot_id)
 
 # -----------------------------------------------------------------------------
 
@@ -86,6 +153,9 @@ class ExecutionTracker:
             parent_id=order.client_order_id,
             orders=orders,
         )
+
+        for bracket_order in orders:
+            self._order_id_to_bot_id[bracket_order.client_order_id] = bot_id
 
         self._executions[bot_id] = order_group
 

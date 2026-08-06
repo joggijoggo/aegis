@@ -3,14 +3,30 @@
 Validates execution lifecycles, tracking group updates, and bot isolation bounds.
 """
 
+from unittest.mock import (
+    PropertyMock,
+    patch,
+)
+
 import pytest
 
-from core.exceptions import NettingRestrictionError
+from core.exceptions import (
+    NettingRestrictionError,
+    UnsupportedBrokerEventError,
+    UntrackedOrderException,
+)
 from core.execution_tracker import ExecutionTracker
 from core.models import (
+    BrokerEvent,
+    EventType,
     OrderSide,
 )
-from tests.testutils import create_order_factory
+from core.order_group import OrderGroup
+from tests.testutils import (
+    create_order_factory,
+    create_order_receipt_factory,
+    create_trade_receipt_factory,
+)
 
 # =============================================================================
 # -----------------------------------------------------------------------------
@@ -83,6 +99,104 @@ def test_execution_tracker_enforces_strict_bot_isolation() -> None:
 
     assert tracker.has_active_execution('BOT_TEST_A')
     assert not tracker.has_active_execution('BOT_TEST_B')
+
+# -----------------------------------------------------------------------------
+
+def test_execution_tracker_routes_order_notification_nominally() -> None:
+    """Verify that an order notification event is correctly routed to the targeted order group."""
+    tracker = ExecutionTracker()
+    domain_order = create_order_factory(client_order_id='ORDER_123')
+    tracker.register_order('BOT_TEST_A', domain_order)
+    assert tracker.has_active_execution('BOT_TEST_A')
+
+    receipt = create_order_receipt_factory(client_order_id='ORDER_123')
+    broker_event = BrokerEvent(event_type=EventType.ORDER_NOTIFICATION, payload=receipt)
+
+    with (
+        patch.object(
+            tracker._executions['BOT_TEST_A'], 'notify_order_change') as mock_notify,
+        patch.object(
+            OrderGroup, 'is_terminal', new_callable=PropertyMock, return_value=False),
+    ):
+        tracker.process_broker_event(broker_event)
+
+        mock_notify.assert_called_once_with(receipt)
+        # Checks that it is still alive.
+        assert tracker.has_active_execution('BOT_TEST_A')
+
+# -----------------------------------------------------------------------------
+
+def test_execution_tracker_routes_trade_notification_nominally() -> None:
+    """Verify that a trade notification event is correctly routed to the targeted order group."""
+    tracker = ExecutionTracker()
+    domain_order = create_order_factory(client_order_id='ORDER_123')
+    tracker.register_order('BOT_TEST_A', domain_order)
+    assert tracker.has_active_execution('BOT_TEST_A')
+
+    receipt = create_trade_receipt_factory(group_id='ORDER_123')
+    broker_event = BrokerEvent(event_type=EventType.TRADE_NOTIFICATION, payload=receipt)
+
+    with (
+        patch.object(
+            tracker._executions['BOT_TEST_A'], 'notify_trade_change') as mock_notify,
+        patch.object(
+            OrderGroup, 'is_terminal', new_callable=PropertyMock, return_value=False),
+    ):
+        tracker.process_broker_event(broker_event)
+
+        mock_notify.assert_called_once_with(receipt)
+        assert tracker.has_active_execution('BOT_TEST_A')
+
+# -----------------------------------------------------------------------------
+
+def test_execution_tracker_clears_memory_on_terminal_state() -> None:
+    """Verify that the tracker purges all internal RAM references when group is terminal."""
+    tracker = ExecutionTracker()
+    domain_order = create_order_factory(client_order_id='ORDER_123')
+    tracker.register_order('BOT_TEST_A', domain_order)
+    assert tracker.has_active_execution('BOT_TEST_A')
+
+    receipt = create_order_receipt_factory(client_order_id='ORDER_123')
+    broker_event = BrokerEvent(event_type=EventType.ORDER_NOTIFICATION, payload=receipt)
+
+    with (
+        patch.object(
+            tracker._executions['BOT_TEST_A'], 'notify_order_change'),
+        patch.object(
+            OrderGroup, 'is_terminal', new_callable=PropertyMock, return_value=True),
+    ):
+        tracker.process_broker_event(broker_event)
+
+        assert not tracker.has_active_execution('BOT_TEST_A')
+
+# -----------------------------------------------------------------------------
+
+def test_execution_tracker_process_broker_event_raises_untracked_order() -> None:
+    """Verify that processing an event for an unrecognized order ID raises an error."""
+    tracker = ExecutionTracker()
+    receipt = create_order_receipt_factory(client_order_id='UNKNOWN_ID')
+    broker_event = BrokerEvent(event_type=EventType.ORDER_NOTIFICATION, payload=receipt)
+
+    with pytest.raises(UntrackedOrderException) as exc_info:
+        tracker.process_broker_event(broker_event)
+
+    assert "order identity 'UNKNOWN_ID' is untracked" in str(exc_info.value)
+
+# -----------------------------------------------------------------------------
+
+def test_execution_tracker_process_broker_event_raises_unsupported_event() -> None:
+    """Verify that processing an event with an unhandled event type raises an error."""
+    tracker = ExecutionTracker()
+    domain_order = create_order_factory(client_order_id='ORDER_123')
+    tracker.register_order('BOT_TEST_A', domain_order)
+
+    receipt = create_order_receipt_factory(client_order_id='ORDER_123')
+    corrupted_event = BrokerEvent(event_type='UNKNOWN_EVENT_TAXONOMY', payload=receipt)
+
+    with pytest.raises(UnsupportedBrokerEventError) as exc_info:
+        tracker.process_broker_event(corrupted_event)
+
+    assert 'Received unhandled or corrupted event type' in str(exc_info.value)
 
 # =============================================================================
 # -----------------------------------------------------------------------------
