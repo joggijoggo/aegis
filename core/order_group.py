@@ -276,7 +276,15 @@ class OrderGroup:
         is_parent = order_receipt.client_order_id == self._parent_id
         target_matrix = self._PARENT_MATRIX if is_parent else self._CHILD_MATRIX
 
+        prev_state = self._state
         self._state = target_matrix[self._state][order_receipt.state]
+
+        if self._state == OrderGroupState.CORRUPTED:
+            raise CorruptedOrderGroupError(
+                f'Group "{self._parent_id}" went from "{prev_state}" '
+                f'to "{self._state}" on order {order_receipt.client_order_id} '
+                f'entering state "{order_receipt.state}".'
+            )
 
         self._evaluate_eviction_barrier()
 
@@ -296,6 +304,8 @@ class OrderGroup:
                 f'Action denied: order group "{self._parent_id}" is corrupted.'
             )
 
+        prev_state = self._state
+
         if trade_receipt.is_open:
             self._clearing_closed = False
         else:
@@ -313,6 +323,13 @@ class OrderGroup:
                 self._state = OrderGroupState.CORRUPTED
             elif self._state == OrderGroupState.CLOSING or any_child_filled:
                 self._evaluate_eviction_barrier()
+
+        if self._state == OrderGroupState.CORRUPTED:
+            raise CorruptedOrderGroupError(
+                f'Group "{self._parent_id}" went from {prev_state} '
+                f'to {self._state} during trade clearing evaluation. '
+                f'Trade Open flag: {trade_receipt.is_open}.'
+            )
 
 # =============================================================================
 # -----------------------------------------------------------------------------

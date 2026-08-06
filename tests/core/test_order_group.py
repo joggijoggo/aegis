@@ -353,10 +353,10 @@ def test_order_group_clandestine_closure_forensic_detection() -> None:
     assert group._state == OrderGroupState.ACTIVE
 
     # Inflict flat trade receipt without any child protective order being filled
-    group.notify_trade_change(create_trade_receipt_factory(group_id='O-ACC2', is_open=False))
-
-    # Invariant: Must intercept the platform bypass and lock to CORRUPTED
-    assert group._state == OrderGroupState.CORRUPTED
+    with pytest.raises(CorruptedOrderGroupError):
+        group.notify_trade_change(
+            create_trade_receipt_factory(group_id='O-ACC2', is_open=False)
+    )
 
 # -----------------------------------------------------------------------------
 
@@ -440,12 +440,10 @@ def test_order_group_duplicate_order_receipt_corruption() -> None:
     assert group._state == OrderGroupState.ACTIVE
 
     # Malicious or broken network duplication of the exact same fill receipt
-    group.notify_order_change(create_order_receipt_factory(
-        group_id='O-ANM1', client_order_id='O-ANM1', state=OrderState.FILLED
-    ))
-
-    # Invariant: Intersection must break invariants and freeze to CORRUPTED
-    assert group._state == OrderGroupState.CORRUPTED
+    with pytest.raises(CorruptedOrderGroupError):
+        group.notify_order_change(create_order_receipt_factory(
+            group_id='O-ANM1', client_order_id='O-ANM1', state=OrderState.FILLED
+        ))
 
 # -----------------------------------------------------------------------------
 
@@ -525,12 +523,10 @@ def test_order_group_late_child_protective_ghost_fill() -> None:
     assert group._state == OrderGroupState.REJECTING
 
     # 2. Anomaly: Child protective order executes filled while group is clearing out
-    group.notify_order_change(create_order_receipt_factory(
-        group_id='O-EXT1', client_order_id='O-EXT1-SL', state=OrderState.FILLED
-    ))
-
-    # Invariant: Must trap the causal violation and isolate via CORRUPTED status
-    assert group._state == OrderGroupState.CORRUPTED
+    with pytest.raises(CorruptedOrderGroupError):
+        group.notify_order_change(create_order_receipt_factory(
+            group_id='O-EXT1', client_order_id='O-EXT1-SL', state=OrderState.FILLED
+        ))
 
 # -----------------------------------------------------------------------------
 
@@ -544,12 +540,10 @@ def test_order_group_premature_child_ghost_fill_before_parent() -> None:
     assert group._state == OrderGroupState.PENDING
 
     # Anomaly: Venue ledger reports a protective child execution while parent is PENDING
-    group.notify_order_change(create_order_receipt_factory(
-        group_id='O-EXT2', client_order_id='O-EXT2-SL', state=OrderState.FILLED
-    ))
-
-    # Invariant: Physical causal violation must freeze the structure context to CORRUPTED
-    assert group._state == OrderGroupState.CORRUPTED
+    with pytest.raises(CorruptedOrderGroupError):
+        group.notify_order_change(create_order_receipt_factory(
+            group_id='O-EXT2', client_order_id='O-EXT2-SL', state=OrderState.FILLED
+        ))
 
 # =============================================================================
 # -----------------------------------------------------------------------------

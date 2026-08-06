@@ -11,6 +11,7 @@ import pytest
 
 from core.contract_registry import ContractRegistry
 from core.exceptions import (
+    CorruptedOrderGroupError,
     DuplicateOrderGroupError,
     UnsupportedBrokerEventError,
     UntrackedOrderException,
@@ -456,12 +457,13 @@ def test_engine_trade_notification_reconciliation_logic() -> None:
     ))
 
     # Clearing notification arrives flat while group is ACTIVE (no child ever filled)
-    engine_b._process_broker_event(BrokerEvent(
-        event_type=EventType.TRADE_NOTIFICATION,
-        payload=create_trade_receipt_factory(group_id='B1', is_open=False)
-    ))
+    with pytest.raises(CorruptedOrderGroupError):
+        engine_b._process_broker_event(BrokerEvent(
+            event_type=EventType.TRADE_NOTIFICATION,
+            payload=create_trade_receipt_factory(group_id='B1', is_open=False)
+        ))
 
-    # Assert the engine caught the platform bypass and flagged corruption parameters
+    # Assert the engine did not evicted corrupted group
     assert 'B1' in engine_b._order_groups
 
 # -----------------------------------------------------------------------------
