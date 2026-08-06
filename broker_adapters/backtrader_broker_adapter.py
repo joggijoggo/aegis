@@ -233,7 +233,7 @@ class BacktraderBrokerAdapter(BaseBrokerAdapter):
             bt.Order.Partial: OrderState.PARTIALLY_FILLED,
             bt.Order.Completed: OrderState.FILLED,
             bt.Order.Canceled: OrderState.CANCELED,
-            bt.Order.Expired: OrderState.CANCELED,
+            bt.Order.Expired: OrderState.EXPIRED,
             bt.Order.Margin: OrderState.REJECTED,
             bt.Order.Rejected: OrderState.REJECTED,
         }
