@@ -4,17 +4,21 @@ from decimal import Decimal
 from typing import Any
 import uuid
 
+from core.contract_registry import ContractRegistry
 from core.currency_converter import CurrencyConverter
 from core.models import (
     AccountSnapshot,
     ContractSpecification,
     Order,
+    OrderReceipt,
     OrderSide,
+    OrderState,
     OrderType,
     Position,
     PositionLedgerSnapshot,
     PositionSide,
     TimeInForce,
+    TradeReceipt,
 )
 from core.models.market import (
     MarketContext,
@@ -52,6 +56,16 @@ def create_account_snapshot_factory(**kwargs) -> AccountSnapshot:
     }
     defaults.update(kwargs)
     return AccountSnapshot(**defaults)
+
+# -----------------------------------------------------------------------------
+
+def create_contract_registry_factory(**kwargs) -> ContractRegistry:
+    """Generates a ContractRegistry instance with dynamic specification overrides."""
+    defaults = {
+        'specifications': {},
+    }
+    defaults.update(kwargs)
+    return ContractRegistry(**defaults)
 
 # -----------------------------------------------------------------------------
 
@@ -132,6 +146,22 @@ def create_order_factory(**kwargs) -> Order:
 
 # -----------------------------------------------------------------------------
 
+def create_order_receipt_factory(**kwargs) -> OrderReceipt:
+    """Generates an OrderReceipt instance with dynamic keyword overrides."""
+    defaults = {
+        'average_execution_price': Decimal('1.08500'),
+        'broker_order_id': 'BRK-TEST-ID-12345',
+        'client_order_id': 'AEGIS-ORD-TEST',
+        'executed_quantity': Decimal('1.0'),
+        'group_id': 'AEGIS-ORD-TEST',
+        'reject_reason': None,
+        'state': OrderState.FILLED,
+    }
+    defaults.update(kwargs)
+    return OrderReceipt(**defaults)
+
+# -----------------------------------------------------------------------------
+
 def create_position_factory(**kwargs) -> Position:
     """Generates a Position instance with dynamic keyword overrides."""
     defaults = {
@@ -163,6 +193,21 @@ def create_position_sizer_factory(**kwargs: Any) -> PositionSizer:
     }
     defaults.update(kwargs)
     return PositionSizer(**defaults)
+
+# -----------------------------------------------------------------------------
+
+def create_trade_receipt_factory(**kwargs) -> TradeReceipt:
+    """Generates a TradeReceipt instance with dynamic keyword overrides."""
+    defaults = {
+        'broker_trade_id': 'TRD-TEST-ID-67890',
+        'commission': Decimal('1.50'),
+        'group_id': 'AEGIS-ORD-TEST',
+        'is_open': False,
+        'realized_pnl': Decimal('150.00'),
+        'symbol': 'EURUSD',
+    }
+    defaults.update(kwargs)
+    return TradeReceipt(**defaults)
 
 # =============================================================================
 # -----------------------------------------------------------------------------

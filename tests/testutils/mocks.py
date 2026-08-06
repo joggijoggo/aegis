@@ -1,7 +1,6 @@
 """Aegis Framework - Explicit Contractual Component Mocks."""
 
 from queue import Queue
-import uuid
 
 from bots.base_bot import BaseBot
 from broker_adapters.base_broker_adapter import BaseBrokerAdapter
@@ -13,13 +12,14 @@ from core.models import (
     ExposureIntent,
     MarketContext,
     Order,
-    OrderStatus,
+    OrderState,
     PositionLedgerSnapshot,
 )
 from market_feeds.base_market_feed import BaseMarketFeed
 from strategies.base_strategy import AbstractStrategy
 from tests.testutils import (
     create_account_snapshot_factory,
+    create_order_receipt_factory,
     create_position_ledger_snapshot_factory,
 )
 
@@ -111,12 +111,13 @@ class FakeBrokerAdapter(BaseBrokerAdapter):
         """
         self.submitted_orders.append(order)
 
-        fake_receipt = {
-            'broker_order_id': f'BRK-FAKE-{uuid.uuid4()}',
-            'client_order_id': order.client_order_id,
-            'status': OrderStatus.FILLED,
-            'average_execution_price': order.price,
-        }
+        fake_receipt = create_order_receipt_factory(
+            average_execution_price=order.price,
+            client_order_id=order.client_order_id,
+            executed_quantity=order.quantity,
+            group_id=order.client_order_id,
+            state=OrderState.PENDING,
+        )
         broker_event = BrokerEvent(
             event_type=EventType.ORDER_NOTIFICATION,
             payload=fake_receipt,

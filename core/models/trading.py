@@ -6,12 +6,11 @@ Handles and tracks transactional execution lifecycle records.
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
-from typing import Any
 
-from core.models.enums import (
+from core.models import (
     EventType,
     OrderSide,
-    OrderStatus,
+    OrderState,
     OrderType,
     TimeInForce,
 )
@@ -19,14 +18,6 @@ from core.models.enums import (
 # =============================================================================
 # -----------------------------------------------------------------------------
 # =============================================================================
-
-@dataclass(frozen=True)
-class BrokerEvent:
-    """Immutable record capturing broker notifications."""
-    event_type: EventType
-    payload: Any
-
-# -----------------------------------------------------------------------------
 
 @dataclass(frozen=True)
 class ExposureIntent:
@@ -80,17 +71,55 @@ class OrderReceipt:
     """Broker execution response details.
 
     Attributes:
-        broker_order_id: (Optional) Unique broker tracking identifier.
-        client_order_id: Unique internal tracking identifier.
-        status: Order execution lifecycle state.
-        average_execution_price: (Optional) Volume-weighted execution price.
-        reject_reason: (Optional) Broker rejection cause description.
+        average_execution_price: Volume-weighted execution price or None.
+        broker_order_id: Unique broker tracking identifier or None.
+        client_order_id: Unique internal tracking identifier for the specific order.
+        executed_quantity: Explicit volume executed during the current infrastructure tick.
+        group_id: Unique internal tracking identifier for the parent execution group.
+        reject_reason: Broker rejection cause description or None.
+        state: Order execution lifecycle state.
     """
+    average_execution_price: Decimal | None
     broker_order_id: str | None
     client_order_id: str
-    status: OrderStatus
-    average_execution_price: Decimal | None = None
-    reject_reason: str | None = None
+    executed_quantity: Decimal
+    group_id: str
+    reject_reason: str | None
+    state: OrderState
+
+# -----------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class TradeReceipt:
+    """Broker transaction clearing details mapping financial performance.
+
+    Attributes:
+        broker_trade_id: Unique broker tracking identifier.
+        commission: Transaction friction fees charged by the broker.
+        group_id: Unique internal tracking identifier for the parent group.
+        is_open: Boolean flag indicating if the position remains active.
+        realized_pnl: Financial net result extracted from the closed exposure.
+        symbol: Financial asset ticker code identifier.
+    """
+    broker_trade_id: str
+    commission: Decimal
+    group_id: str
+    is_open: bool
+    realized_pnl: Decimal
+    symbol: str
+
+# -----------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class BrokerEvent:
+    """Immutable record capturing broker notifications.
+
+    Attributes:
+        event_type: Infrastructure event classification category.
+        payload: Strongly-typed domain data record payload.
+    """
+    event_type: EventType
+    payload: OrderReceipt | TradeReceipt
 
 # -----------------------------------------------------------------------------
 

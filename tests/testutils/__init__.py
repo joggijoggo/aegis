@@ -19,13 +19,16 @@ from tests.testutils.constants import (
 )
 from tests.testutils.factories import (
     create_account_snapshot_factory as create_account_snapshot_factory,
+    create_contract_registry_factory as create_contract_registry_factory,
     create_contract_specification_factory as create_contract_specification_factory,
     create_currency_converter_factory as create_currency_converter_factory,
     create_market_context_factory as create_market_context_factory,
     create_order_factory as create_order_factory,
+    create_order_receipt_factory as create_order_receipt_factory,
     create_position_factory as create_position_factory,
     create_position_ledger_snapshot_factory as create_position_ledger_snapshot_factory,
     create_position_sizer_factory as create_position_sizer_factory,
+    create_trade_receipt_factory as create_trade_receipt_factory,
 )
 from tests.testutils.mocks import (
     FakeBot as FakeBot,
