@@ -29,6 +29,11 @@ class ContractVolumeUnderflowError(AegisError):
 
 # -----------------------------------------------------------------------------
 
+class CorruptedOrderGroupError(AegisError):
+    """Execution mutation attempt over a compromised transaction state."""
+
+# -----------------------------------------------------------------------------
+
 class DuplicateOrderGroupError(AegisError):
     """The execution engine attempted to register an already existing order group identifier."""
 
@@ -51,6 +56,11 @@ class StrategyError(AegisError):
 
 class UnsupportedBrokerEventError(AegisError):
     """The received infrastructure event category is not supported by the execution engine."""
+
+# -----------------------------------------------------------------------------
+
+class UntrackedOrderException(AegisError):
+    """Tracking layer breach due to an unrecognized group or order identifier."""
 
 # =============================================================================
 # -----------------------------------------------------------------------------
