@@ -5,7 +5,7 @@ Validates accounting parsing, asynchronous queue polling, and notification mappi
 
 from decimal import Decimal
 from queue import Queue
-from unittest.mock import call, MagicMock
+from unittest.mock import call, MagicMock, patch
 
 import backtrader as bt
 import pytest
@@ -16,6 +16,10 @@ from broker_adapters.backtrader_broker_adapter import (
     BacktraderBrokerAdapter,
     InvalidOrderQuantityError,
     InvalidProtectionPriceError,
+)
+from core.exceptions import (
+    BrokerOrderNotFoundError,
+    BrokerPositionNotFoundError,
 )
 from core.models import (
     AccountSnapshot,
@@ -31,6 +35,7 @@ from core.models import (
     TimeInForce,
     TradeReceipt,
 )
+from tests.testutils import create_order_factory
 
 # =============================================================================
 # -----------------------------------------------------------------------------
@@ -232,6 +237,82 @@ def test_backtrader_broker_adapter_asymmetric_bracket_transmission() -> None:
     )
 
 # -----------------------------------------------------------------------------
+
+def test_backtrader_broker_adapter_cancel_order_nominal_success() -> None:
+    mock_bridge = MagicMock()
+    adapter = BacktraderBrokerAdapter(bridge=mock_bridge)
+
+    domain_order = create_order_factory(client_order_id='ORDER_123')
+
+    native_order = MagicMock()
+    native_order.info = {"client_order_id": "ORDER_123"}
+    mock_bridge.strategy.broker.get_orders_open.return_value = [native_order]
+
+    with patch.object(mock_bridge.strategy.broker, "cancel") as mock_cancel:
+        adapter.cancel_order(domain_order)
+        mock_cancel.assert_called_once_with(native_order)
+
+# -----------------------------------------------------------------------------
+
+def test_backtrader_broker_adapter_cancel_order_raises_not_found_error() -> None:
+    mock_bridge = MagicMock()
+    adapter = BacktraderBrokerAdapter(bridge=mock_bridge)
+
+    domain_order = create_order_factory(client_order_id='ORDER_123')
+
+    native_order = MagicMock()
+    native_order.info = {"client_order_id": "UNKNOWN_ID"}
+    mock_bridge.strategy.broker.get_orders_open.return_value = [native_order]
+
+    with pytest.raises(BrokerOrderNotFoundError) as exc_info:
+        adapter.cancel_order(domain_order)
+
+    assert domain_order.client_order_id in str(exc_info.value)
+
+# -----------------------------------------------------------------------------
+
+def test_backtrader_broker_adapter_close_position_nominal_success() -> None:
+    mock_bridge = MagicMock()
+    adapter = BacktraderBrokerAdapter(bridge=mock_bridge)
+
+    domain_order = create_order_factory(symbol='EURUSD')
+
+    mock_data_feed = MagicMock()
+    mock_data_feed._name = 'EURUSD'
+    mock_bridge.strategy.datas = [mock_data_feed]
+
+    mock_position = MagicMock()
+    mock_position.size = 10
+    mock_bridge.strategy.positions = {mock_data_feed: mock_position}
+
+    with patch.object(mock_bridge.strategy, "close") as mock_close:
+        adapter.close_position(domain_order)
+
+        mock_close.assert_called_once_with(data=mock_data_feed)
+
+# -----------------------------------------------------------------------------
+
+def test_backtrader_broker_adapter_close_position_raises_not_found_error() -> None:
+    mock_bridge = MagicMock()
+    adapter = BacktraderBrokerAdapter(bridge=mock_bridge)
+
+    domain_order = create_order_factory(symbol='EURUSD')
+
+    mock_data_feed = MagicMock()
+    mock_data_feed._name = 'EURUSD'
+    mock_bridge.strategy.datas = [mock_data_feed]
+
+    mock_position = MagicMock()
+    mock_position.size = 0
+    mock_bridge.strategy.positions = {mock_data_feed: mock_position}
+
+    with pytest.raises(BrokerPositionNotFoundError) as exc_info:
+        adapter.close_position(domain_order)
+
+    assert 'EURUSD' in str(exc_info.value)
+
+# -----------------------------------------------------------------------------
+
 def test_backtrader_broker_adapter_polling_fifo_flow_for_orders() -> None:
     """Verifies queue polling and structural unpacking for order events."""
     broker_queue: Queue = Queue()

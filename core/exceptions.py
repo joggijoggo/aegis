@@ -19,6 +19,16 @@ class BrokerConnectionError(AegisError):
 
 # -----------------------------------------------------------------------------
 
+class BrokerOrderNotFoundError(AegisError):
+    """The requested order was not found within the active broker's open carnet."""
+
+# -----------------------------------------------------------------------------
+
+class BrokerPositionNotFoundError(AegisError):
+    """The requested market exposure was not found within the active portfolio ledger."""
+
+# -----------------------------------------------------------------------------
+
 class ContractNotFoundError(AegisError):
     """Financial contract is missing from the registry mapping."""
 

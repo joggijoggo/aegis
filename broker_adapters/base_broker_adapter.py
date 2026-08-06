@@ -52,6 +52,28 @@ class BaseBrokerAdapter(ABC):
 # -----------------------------------------------------------------------------
 
     @abstractmethod
+    def cancel_order(self, order: Order) -> None:
+        """Cancel a working order in the market.
+
+        Args:
+            order: The target order to cancel.
+        """
+        pass
+
+# -----------------------------------------------------------------------------
+
+    @abstractmethod
+    def close_position(self, order: Order) -> None:
+        """Close the market position associated with the given order.
+
+        Args:
+            order: The parent order that initiated the position.
+        """
+        pass
+
+# -----------------------------------------------------------------------------
+
+    @abstractmethod
     def get_broker_snapshot(self) -> BrokerSnapshot:
         """Retrieves the unified temporal snapshot of account metrics and market exposures.
 
