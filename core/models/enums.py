@@ -4,13 +4,13 @@ Enforces unified execution directions, lifecycle states, and internal accounting
 flags across the framework boundaries.
 """
 
-from enum import Enum
+from enum import StrEnum
 
 # =============================================================================
 # -----------------------------------------------------------------------------
 # =============================================================================
 
-class EventType(Enum):
+class EventType(StrEnum):
     """Infrastructure event categories."""
     MARKET_TICK = 'MARKET_TICK'
     ORDER_NOTIFICATION = 'ORDER_NOTIFICATION'
@@ -18,7 +18,7 @@ class EventType(Enum):
 
 # -----------------------------------------------------------------------------
 
-class OrderGroupState(Enum):
+class OrderGroupState(StrEnum):
     """Aggregated execution lifecycle state of an entire bracket group in RAM.
 
     States:
@@ -51,14 +51,14 @@ class OrderGroupState(Enum):
 
 # -----------------------------------------------------------------------------
 
-class OrderSide(Enum):
+class OrderSide(StrEnum):
     """Enforces execution direction flags across external gateway adapters."""
     BUY = 'BUY'
     SELL = 'SELL'
 
 # -----------------------------------------------------------------------------
 
-class OrderState(Enum):
+class OrderState(StrEnum):
     """Atomic execution lifecycle state of a single order in the broker book.
 
     States:
@@ -87,7 +87,7 @@ class OrderState(Enum):
 
 # -----------------------------------------------------------------------------
 
-class OrderType(Enum):
+class OrderType(StrEnum):
     """Enforces structural routing parameter limitations for orders executions."""
     MARKET = 'MARKET'
     LIMIT = 'LIMIT'
@@ -95,14 +95,14 @@ class OrderType(Enum):
 
 # -----------------------------------------------------------------------------
 
-class PositionSide(Enum):
+class PositionSide(StrEnum):
     """Direction of an active financial exposure open on the market."""
     LONG = 'LONG'
     SHORT = 'SHORT'
 
 # -----------------------------------------------------------------------------
 
-class TimeInForce(Enum):
+class TimeInForce(StrEnum):
     """Enforces execution expiration boundaries across broker gateways."""
     DAY = 'DAY'
     GTC = 'GTC'

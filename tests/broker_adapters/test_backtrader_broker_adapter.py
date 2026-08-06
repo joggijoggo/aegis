@@ -633,7 +633,7 @@ def test_backtrader_broker_adapter_unsupported_policies() -> None:
     mock_order_tif.order_type = OrderType.MARKET
     mock_order_tif.time_in_force = TimeInForce.DAY
 
-    with pytest.raises(NotImplementedError, match="TimeInForce policy 'TimeInForce.DAY' is not supported"):
+    with pytest.raises(NotImplementedError, match="TimeInForce policy 'DAY' is not supported"):
         adapter.submit_order(mock_order_tif)
 
 # -----------------------------------------------------------------------------
