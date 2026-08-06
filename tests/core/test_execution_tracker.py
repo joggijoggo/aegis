@@ -4,6 +4,7 @@ Validates execution lifecycles, tracking group updates, and bot isolation bounds
 """
 
 from unittest.mock import (
+    MagicMock,
     PropertyMock,
     patch,
 )
@@ -11,6 +12,7 @@ from unittest.mock import (
 import pytest
 
 from core.exceptions import (
+    DanglingExecutionError,
     NettingRestrictionError,
     UnsupportedBrokerEventError,
     UntrackedOrderException,
@@ -197,6 +199,99 @@ def test_execution_tracker_process_broker_event_raises_unsupported_event() -> No
         tracker.process_broker_event(corrupted_event)
 
     assert 'Received unhandled or corrupted event type' in str(exc_info.value)
+
+# -----------------------------------------------------------------------------
+
+def test_execution_tracker_terminate_execution_cancels_when_cancelable() -> None:
+    """Verify that terminate_execution calls cancel_order if the group is cancelable."""
+    tracker = ExecutionTracker()
+    domain_order = create_order_factory(client_order_id='ORDER_123')
+    tracker.register_order('BOT_TEST_A', domain_order)
+    mock_adapter = MagicMock()
+
+    with (
+        patch.object(OrderGroup, 'get_parent_order', return_value=domain_order),
+        patch.object(OrderGroup, 'is_cancelable', return_value=True),
+        patch.object(OrderGroup, 'is_closable', return_value=False),
+        patch.object(OrderGroup, 'is_terminal', new_callable=PropertyMock, return_value=False),
+    ):
+        tracker.terminate_execution('BOT_TEST_A', mock_adapter)
+
+        mock_adapter.cancel_order.assert_called_once_with(domain_order)
+        assert tracker.has_active_execution('BOT_TEST_A')
+
+# -----------------------------------------------------------------------------
+
+def test_execution_tracker_terminate_execution_closes_when_closable() -> None:
+    """Verify that terminate_execution calls close_position if the group is closable."""
+    tracker = ExecutionTracker()
+    domain_order = create_order_factory(client_order_id='ORDER_123')
+    tracker.register_order('BOT_TEST_A', domain_order)
+    mock_adapter = MagicMock()
+
+    with (
+        patch.object(OrderGroup, 'get_parent_order', return_value=domain_order),
+        patch.object(OrderGroup, 'is_cancelable', return_value=False),
+        patch.object(OrderGroup, 'is_closable', return_value=True),
+        patch.object(OrderGroup, 'is_terminal', new_callable=PropertyMock, return_value=False),
+    ):
+        tracker.terminate_execution('BOT_TEST_A', mock_adapter)
+
+        mock_adapter.close_position.assert_called_once_with(domain_order)
+        assert tracker.has_active_execution('BOT_TEST_A')
+
+# -----------------------------------------------------------------------------
+
+def test_execution_tracker_terminate_execution_raises_dangling_execution() -> None:
+    """Verify that terminate_execution raises an error if a terminal group persists in RAM."""
+    tracker = ExecutionTracker()
+    domain_order = create_order_factory(client_order_id='ORDER_123')
+    tracker.register_order('BOT_TEST_A', domain_order)
+    mock_adapter = MagicMock()
+
+    with (
+        patch.object(OrderGroup, 'get_parent_order', return_value=domain_order),
+        patch.object(OrderGroup, 'is_cancelable', return_value=False),
+        patch.object(OrderGroup, 'is_closable', return_value=False),
+        patch.object(OrderGroup, 'is_terminal', new_callable=PropertyMock, return_value=True),
+    ):
+        with pytest.raises(DanglingExecutionError) as exc_info:
+            tracker.terminate_execution('BOT_TEST_A', mock_adapter)
+
+        assert 'is already terminal but was not evicted from memory' in str(exc_info.value)
+
+# -----------------------------------------------------------------------------
+
+def test_execution_tracker_terminate_execution_raises_untracked_order() -> None:
+    """Verify that forcing termination on an inactive bot raises an error."""
+    tracker = ExecutionTracker()
+    mock_adapter = MagicMock()
+
+    with pytest.raises(UntrackedOrderException) as exc_info:
+        tracker.terminate_execution('BOT_UNKNOWN', mock_adapter)
+
+    assert "Termination failure: bot 'BOT_UNKNOWN' has no active" in str(exc_info.value)
+
+# -----------------------------------------------------------------------------
+
+def test_execution_tracker_terminate_execution_ignores_transitional_phases() -> None:
+    """Verify that terminate_execution does nothing if the group is in a transitional phase."""
+    tracker = ExecutionTracker()
+    domain_order = create_order_factory(client_order_id='ORDER_123')
+    tracker.register_order('BOT_TEST_A', domain_order)
+    mock_adapter = MagicMock()
+
+    with (
+        patch.object(OrderGroup, 'get_parent_order', return_value=domain_order),
+        patch.object(OrderGroup, 'is_cancelable', return_value=False),
+        patch.object(OrderGroup, 'is_closable', return_value=False),
+        patch.object(OrderGroup, 'is_terminal', new_callable=PropertyMock, return_value=False),
+    ):
+        tracker.terminate_execution('BOT_TEST_A', mock_adapter)
+
+        mock_adapter.cancel_order.assert_not_called()
+        mock_adapter.close_position.assert_not_called()
+        assert tracker.has_active_execution('BOT_TEST_A')
 
 # =============================================================================
 # -----------------------------------------------------------------------------

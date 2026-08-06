@@ -5,7 +5,9 @@ Tracks active transaction groups to isolate individual bot market exposure.
 
 from dataclasses import replace
 
+from broker_adapters.base_broker_adapter import BaseBrokerAdapter
 from core.exceptions import (
+    DanglingExecutionError,
     NettingRestrictionError,
     UnsupportedBrokerEventError,
     UntrackedOrderException,
@@ -158,6 +160,38 @@ class ExecutionTracker:
             self._order_id_to_bot_id[bracket_order.client_order_id] = bot_id
 
         self._executions[bot_id] = order_group
+
+# -----------------------------------------------------------------------------
+
+    def terminate_execution(self, bot_id: str, broker_adapter: BaseBrokerAdapter) -> None:
+        """Force immediate market liquidation or cancellation for a targeted bot.
+
+        Args:
+            bot_id: The unique identifier of the target trading bot.
+            broker_adapter: The infrastructure adapter handling network commands.
+        """
+        if not self.has_active_execution(bot_id):
+            raise UntrackedOrderException(
+                f"Termination failure: bot '{bot_id}' has no active "
+                f"execution group registered in memory."
+            )
+
+        order_group = self._executions[bot_id]
+        parent_order = order_group.get_parent_order()
+
+        if order_group.is_cancelable():
+            broker_adapter.cancel_order(parent_order)
+        elif order_group.is_closable():
+            broker_adapter.close_position(parent_order)
+        elif order_group.is_terminal:
+            raise DanglingExecutionError(
+                f"Termination failure: bot '{bot_id}' execution group "
+                f"is already terminal but was not evicted from memory."
+            )
+        else:
+            # Active asynchronous transitional phase (CLOSING, REJECTING).
+            # Network commands are already processing. Do not touch RAM or network.
+            pass
 
 # =============================================================================
 # -----------------------------------------------------------------------------

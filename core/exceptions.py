@@ -44,6 +44,11 @@ class CorruptedOrderGroupError(AegisError):
 
 # -----------------------------------------------------------------------------
 
+class DanglingExecutionError(AegisError):
+    """Memory retention anomaly where a terminal bot execution persists in RAM."""
+
+# -----------------------------------------------------------------------------
+
 class DuplicateOrderGroupError(AegisError):
     """The execution engine attempted to register an already existing order group identifier."""
 
