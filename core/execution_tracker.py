@@ -16,7 +16,6 @@ from core.models import (
     BrokerEvent,
     EventType,
     Order,
-    OrderSide,
     OrderType,
 )
 from core.order_group import OrderGroup
@@ -119,7 +118,7 @@ class ExecutionTracker:
 
         orders: list[Order] = [order]
 
-        child_side = OrderSide.SELL if order.side == OrderSide.BUY else OrderSide.BUY
+        child_side = order.side.reverse()
         child_base = replace(
             order,
             side=child_side,

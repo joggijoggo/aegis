@@ -184,6 +184,13 @@ def test_position_ledger_snapshot__filters_records_by_symbol() -> None:
 
     assert len(untraded_positions) == 0
 
+# -----------------------------------------------------------------------------
+
+def test_order_side_reverse() -> None:
+    """Verifies OrderSide reverse successfully returns the opposite side."""
+    assert OrderSide.BUY.reverse() == OrderSide.SELL
+    assert OrderSide.SELL.reverse() == OrderSide.BUY
+
 # =============================================================================
 # -----------------------------------------------------------------------------
 # =============================================================================
