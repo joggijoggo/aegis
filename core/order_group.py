@@ -280,7 +280,6 @@ class OrderGroup:
 
 # -----------------------------------------------------------------------------
 
-    @property
     def is_terminal(self) -> bool:
         """Determines if the group execution cycle is completely dead or closed."""
         return self._state.is_terminal

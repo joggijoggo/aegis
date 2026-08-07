@@ -5,7 +5,6 @@ Validates execution lifecycles, tracking group updates, and bot isolation bounds
 
 from unittest.mock import (
     MagicMock,
-    PropertyMock,
     patch,
 )
 
@@ -118,7 +117,7 @@ def test_execution_tracker_routes_order_notification_nominally() -> None:
         patch.object(
             tracker._executions['BOT_TEST_A'], 'notify_order_change') as mock_notify,
         patch.object(
-            OrderGroup, 'is_terminal', new_callable=PropertyMock, return_value=False),
+            OrderGroup, 'is_terminal', return_value=False),
     ):
         tracker.process_broker_event(broker_event)
 
@@ -142,7 +141,7 @@ def test_execution_tracker_routes_trade_notification_nominally() -> None:
         patch.object(
             tracker._executions['BOT_TEST_A'], 'notify_trade_change') as mock_notify,
         patch.object(
-            OrderGroup, 'is_terminal', new_callable=PropertyMock, return_value=False),
+            OrderGroup, 'is_terminal', return_value=False),
     ):
         tracker.process_broker_event(broker_event)
 
@@ -165,7 +164,7 @@ def test_execution_tracker_clears_memory_on_terminal_state() -> None:
         patch.object(
             tracker._executions['BOT_TEST_A'], 'notify_order_change'),
         patch.object(
-            OrderGroup, 'is_terminal', new_callable=PropertyMock, return_value=True),
+            OrderGroup, 'is_terminal', return_value=True),
     ):
         tracker.process_broker_event(broker_event)
 
@@ -213,7 +212,7 @@ def test_execution_tracker_terminate_execution_cancels_when_cancelable() -> None
         patch.object(OrderGroup, 'get_parent_order', return_value=domain_order),
         patch.object(OrderGroup, 'is_cancelable', return_value=True),
         patch.object(OrderGroup, 'is_closable', return_value=False),
-        patch.object(OrderGroup, 'is_terminal', new_callable=PropertyMock, return_value=False),
+        patch.object(OrderGroup, 'is_terminal', return_value=False),
     ):
         tracker.terminate_execution('BOT_TEST_A', mock_adapter)
 
@@ -233,7 +232,7 @@ def test_execution_tracker_terminate_execution_closes_when_closable() -> None:
         patch.object(OrderGroup, 'get_parent_order', return_value=domain_order),
         patch.object(OrderGroup, 'is_cancelable', return_value=False),
         patch.object(OrderGroup, 'is_closable', return_value=True),
-        patch.object(OrderGroup, 'is_terminal', new_callable=PropertyMock, return_value=False),
+        patch.object(OrderGroup, 'is_terminal', return_value=False),
     ):
         tracker.terminate_execution('BOT_TEST_A', mock_adapter)
 
@@ -253,7 +252,7 @@ def test_execution_tracker_terminate_execution_raises_dangling_execution() -> No
         patch.object(OrderGroup, 'get_parent_order', return_value=domain_order),
         patch.object(OrderGroup, 'is_cancelable', return_value=False),
         patch.object(OrderGroup, 'is_closable', return_value=False),
-        patch.object(OrderGroup, 'is_terminal', new_callable=PropertyMock, return_value=True),
+        patch.object(OrderGroup, 'is_terminal', return_value=True),
     ):
         with pytest.raises(DanglingExecutionError) as exc_info:
             tracker.terminate_execution('BOT_TEST_A', mock_adapter)
@@ -285,7 +284,7 @@ def test_execution_tracker_terminate_execution_ignores_transitional_phases() -> 
         patch.object(OrderGroup, 'get_parent_order', return_value=domain_order),
         patch.object(OrderGroup, 'is_cancelable', return_value=False),
         patch.object(OrderGroup, 'is_closable', return_value=False),
-        patch.object(OrderGroup, 'is_terminal', new_callable=PropertyMock, return_value=False),
+        patch.object(OrderGroup, 'is_terminal', return_value=False),
     ):
         tracker.terminate_execution('BOT_TEST_A', mock_adapter)
 

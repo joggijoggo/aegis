@@ -99,7 +99,7 @@ class ExecutionTracker:
         elif broker_event.event_type == EventType.TRADE_NOTIFICATION:
             order_group.notify_trade_change(receipt)
 
-        if order_group.is_terminal:
+        if order_group.is_terminal():
             self._clear_execution_context(bot_id)
 
 # -----------------------------------------------------------------------------
@@ -177,7 +177,7 @@ class ExecutionTracker:
             broker_adapter.cancel_order(parent_order)
         elif order_group.is_closable():
             broker_adapter.close_position(parent_order)
-        elif order_group.is_terminal:
+        elif order_group.is_terminal():
             raise DanglingExecutionError(
                 f"Termination failure: bot '{bot_id}' execution group "
                 f"is already terminal but was not evicted from memory."

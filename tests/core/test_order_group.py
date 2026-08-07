@@ -97,7 +97,7 @@ def test_order_group_initialization_nominal_topologies() -> None:
     assert group._parent_id == 'ORD-FULL'
     assert group._state == OrderGroupState.PENDING
     assert group._clearing_closed is None  # Verify neutral 3-state baseline
-    assert not group.is_terminal
+    assert not group.is_terminal()
 
     # Verify technical specification index records mapping
     assert len(group._orders) == 3
@@ -274,21 +274,21 @@ def test_order_group_parent_rejection_sequester_nominal() -> None:
         group_id='O-REJ', client_order_id='O-REJ', state=OrderState.REJECTED
     ))
     assert group._state == OrderGroupState.REJECTING
-    assert not group.is_terminal
+    assert not group.is_terminal()
 
     # 2. First child cancellation leaves aggregate in sequester
     group.notify_order_change(create_order_receipt_factory(
         group_id='O-REJ', client_order_id='O-REJ-SL', state=OrderState.CANCELED
     ))
     assert group._state == OrderGroupState.REJECTING
-    assert not group.is_terminal
+    assert not group.is_terminal()
 
     # 3. Final child cancellation satisfies barrier, resolving to terminal REJECTED
     group.notify_order_change(create_order_receipt_factory(
         group_id='O-REJ', client_order_id='O-REJ-TP', state=OrderState.CANCELED
     ))
     assert group._state == OrderGroupState.REJECTED
-    assert group.is_terminal
+    assert group.is_terminal()
 
 # -----------------------------------------------------------------------------
 
@@ -384,13 +384,13 @@ def test_order_group_nominal_unwind_and_eviction_barrier() -> None:
     group.notify_order_change(create_order_receipt_factory(
         group_id='O-ACC3', client_order_id='O-ACC3-TP', state=OrderState.CANCELED
     ))
-    assert not group.is_terminal  # Order states are terminal, but clearing barrier remains open
+    assert not group.is_terminal()  # Order states are terminal, but clearing barrier remains open
 
     # 4. Supply the flat clearing receipt to drop the final barrier
     group.notify_trade_change(create_trade_receipt_factory(group_id='O-ACC3', is_open=False))
 
     assert group._state == OrderGroupState.COMPLETED
-    assert group.is_terminal
+    assert group.is_terminal()
 
 # =============================================================================
 # -----------------------------------------------------------------------------
