@@ -85,10 +85,10 @@ class AegisExecutionEngine:
                     historical_values=buffer.to_list(),
                 )
 
-                if exposure_intent.alpha_direction is None:
+                if exposure_intent.is_flat():
                     continue
 
-                if exposure_intent.alpha_direction == 0.0:
+                if exposure_intent.is_exit():
                     raise NotImplementedError('Close position')
 
                 contract_specification = (

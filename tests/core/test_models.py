@@ -15,6 +15,7 @@ from core.models import (
     AccountSnapshot,
     BrokerEvent,
     EventType,
+    ExposureIntent,
     Order,
     OrderReceipt,
     OrderSide,
@@ -182,6 +183,43 @@ def test_position_ledger_snapshot__filters_records_by_symbol() -> None:
     assert pos_gbpusd in gbpusd_positions
 
     assert len(untraded_positions) == 0
+
+# =============================================================================
+# -----------------------------------------------------------------------------
+# =============================================================================
+
+def test_exposure_intent_none_signals_flat_state() -> None:
+    """Verify that a None alpha direction evaluates strictly as flat."""
+    intent = ExposureIntent(alpha_direction=None)
+
+    assert intent.is_flat()
+    assert not intent.is_entry()
+    assert not intent.is_exit()
+
+# -----------------------------------------------------------------------------
+
+def test_exposure_intent_non_zero_signals_active_entry() -> None:
+    """Verify that any non-zero conviction scalar signals a market entry intent."""
+    intent_buy = ExposureIntent(alpha_direction=0.8)
+    intent_sell = ExposureIntent(alpha_direction=-0.5)
+
+    assert not intent_buy.is_flat()
+    assert intent_buy.is_entry()
+    assert not intent_buy.is_exit()
+
+    assert not intent_sell.is_flat()
+    assert intent_sell.is_entry()
+    assert not intent_sell.is_exit()
+
+# -----------------------------------------------------------------------------
+
+def test_exposure_intent_zero_signals_explicit_liquidation_exit() -> None:
+    """Verify that a zero alpha direction evaluates strictly as a market exit."""
+    intent = ExposureIntent(alpha_direction=0.0)
+
+    assert not intent.is_flat()
+    assert not intent.is_entry()
+    assert intent.is_exit()
 
 # =============================================================================
 # -----------------------------------------------------------------------------
