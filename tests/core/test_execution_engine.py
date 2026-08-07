@@ -5,16 +5,12 @@ and contextual order generation workflows.
 """
 
 from decimal import Decimal
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, Mock, call
 
 import pytest
 
-from core.contract_registry import ContractRegistry
 from core.exceptions import (
-    CorruptedOrderGroupError,
-    DuplicateOrderGroupError,
-    UnsupportedBrokerEventError,
-    UntrackedOrderException,
+    NettingRestrictionError,
 )
 from core.execution_engine import AegisExecutionEngine
 from core.models import (
@@ -23,9 +19,7 @@ from core.models import (
     ExposureIntent,
     MarketContext,
     MarketPricePoint,
-    OrderState,
 )
-from core.position_sizer import PositionSizer
 from tests.testutils import (
     BASE_TIMESTAMP,
     DEFAULT_SYMBOL,
@@ -35,10 +29,8 @@ from tests.testutils import (
     create_contract_registry_factory,
     create_contract_specification_factory,
     create_market_context_factory,
-    create_order_factory,
     create_order_receipt_factory,
     create_position_sizer_factory,
-    create_trade_receipt_factory,
 )
 
 # =============================================================================
@@ -46,37 +38,51 @@ from tests.testutils import (
 # =============================================================================
 
 def test_execution_engine_broker_event_flushing() -> None:
-    """Verifies that unread broker events are fully flushed before evaluating market feeds."""
-    mock_bot = MagicMock(spec=FakeBot)
-    mock_bot.warm_up_period = 10
-    mock_bot.evaluate.side_effect = StopIteration  # Force loop termination after first step
+    """Verify that all pending broker events are fully routed before fetching market data."""
+    fake_bot = FakeBot(warm_up=10)
+    fake_adapter = FakeBrokerAdapter()
+    fake_sizer = create_position_sizer_factory()
 
-    adapter = FakeBrokerAdapter()
-    # Inject a fake unread broker event notification into the queue
-    fake_event = BrokerEvent(event_type=EventType.ORDER_NOTIFICATION, payload={})
-    adapter._pending_events.put(fake_event)
+    spec = create_contract_specification_factory(symbol='EURUSD')
+    fake_registry = create_contract_registry_factory(specifications={'EURUSD': spec})
 
-    mock_registry = MagicMock(spec=ContractRegistry)
-    mock_sizer = MagicMock(spec=PositionSizer)
+    receipt_a = create_order_receipt_factory(client_order_id='ORDER_1')
+    event_a = BrokerEvent(event_type=EventType.ORDER_NOTIFICATION, payload=receipt_a)
+    receipt_b = create_order_receipt_factory(client_order_id='ORDER_2')
+    event_b = BrokerEvent(event_type=EventType.ORDER_NOTIFICATION, payload=receipt_b)
 
-    engine = AegisExecutionEngine(
-        bot=mock_bot,
-        broker_adapter=adapter,
-        contract_registry=mock_registry,
-        position_sizer=mock_sizer,
-    )
+    fake_adapter._pending_events.put(event_a)
+    fake_adapter._pending_events.put(event_b)
 
-    engine._process_broker_event = MagicMock()
-    mock_feed = MagicMock(spec=FakeMarketFeed)
+    engine = AegisExecutionEngine(fake_bot, fake_adapter, fake_registry, fake_sizer)
+    engine._tracker = MagicMock()
 
-    engine.run_execution_cycle(symbol='EURUSD', market_feed=mock_feed)
+    mock_manager = Mock()
+    mock_manager.attach_mock(engine._tracker.process_broker_event, 'process_event')
 
-    # Assert the async event flushing loop was triggered and emptied the queue
-    engine._process_broker_event.assert_called_once_with(fake_event)
-    assert adapter.has_pending_events() is False
+    class MonitoredFeed:
+        def __init__(self, items: list) -> None:
+            self._iterator = iter(items)
 
-    # Assert that the atomic temporal snapshot was pulled exactly once during the cycle
-    assert adapter.snapshot_call_count == 1
+        def __next__(self) -> MarketContext:
+            mock_manager.next_tick()
+            return next(self._iterator)
+
+    clean_feed = MonitoredFeed([create_market_context_factory()])
+
+    assert fake_adapter.has_pending_events()
+
+    engine.run_execution_cycle('EURUSD', clean_feed)
+
+    assert not fake_adapter.has_pending_events()
+
+    expected_calls = [
+        call.process_event(event_a),
+        call.process_event(event_b),
+        call.next_tick()
+    ]
+
+    assert mock_manager.method_calls[:3] == expected_calls
 
 # -----------------------------------------------------------------------------
 
@@ -120,43 +126,36 @@ def test_engine_cycle_executes_order_on_valid_intent(
 
 # -----------------------------------------------------------------------------
 
-def test_engine_cycle_registers_volatile_order_group() -> None:
-    """Ensures that a submitted order creates an isolated internal tracking group record."""
-    intent = ExposureIntent(
-        alpha_direction=1.0,
-        stop_loss_ticks=500.0,
-        take_profit_ticks=1000.0,
+def test_engine_raises_netting_restriction_error_on_collision() -> None:
+    """Verify that netting restriction violations abort the cycle immediately."""
+    exposure_intent = ExposureIntent(
+        alpha_direction=-1.0,
+        stop_loss_ticks=50.0,
+        take_profit_ticks=100.0
     )
-    bot = FakeBot(exposure_intent=intent, warm_up=10)
-    broker = FakeBrokerAdapter()
+    fake_bot = FakeBot(warm_up=10, exposure_intent=exposure_intent)
+    fake_adapter = FakeBrokerAdapter()
+    fake_sizer = create_position_sizer_factory()
 
-    spec = create_contract_specification_factory()
-    registry = ContractRegistry(specifications={DEFAULT_SYMBOL: spec})
-    sizer = create_position_sizer_factory()
-
-    context = create_market_context_factory()
-    feed = FakeMarketFeed(market_contexts=[context])
-
-    engine = AegisExecutionEngine(
-        bot=bot,
-        broker_adapter=broker,
-        contract_registry=registry,
-        position_sizer=sizer,
+    spec = create_contract_specification_factory(symbol='EURUSD')
+    fake_registry = create_contract_registry_factory(
+        specifications={'EURUSD': spec}
     )
 
-    assert len(engine._order_groups) == 0
+    engine = AegisExecutionEngine(fake_bot, fake_adapter, fake_registry, fake_sizer)
+    engine._tracker = MagicMock()
 
-    engine.run_execution_cycle(symbol=DEFAULT_SYMBOL, market_feed=feed)
+    error_msg = 'Strict netting restriction violation'
+    engine._tracker.register_order.side_effect = (
+        NettingRestrictionError(error_msg)
+    )
+    fake_feed = FakeMarketFeed([create_market_context_factory()])
 
-    # Assert that the engine successfully populated its volatile memory ledger
-    assert len(engine._order_groups) == 1
+    with pytest.raises(NettingRestrictionError) as exc_info:
+        engine.run_execution_cycle('EURUSD', fake_feed)
 
-    # Retrieve the tracking record using the submitted order id to check fields mapping
-    order_id = broker.submitted_orders[0].client_order_id
-    assert order_id in engine._order_groups
-
-    recorded_group = engine._order_groups[order_id]
-    assert not recorded_group.is_terminal
+    assert 'Strict netting restriction violation' in str(exc_info.value)
+    assert len(fake_adapter.submitted_orders) == 0
 
 # -----------------------------------------------------------------------------
 
@@ -224,276 +223,6 @@ def test_engine_cycle_skips_processing_on_none_intent(
 
     assert len(broker.submitted_orders) == 0
     assert broker.snapshot_call_count == 1
-
-# -----------------------------------------------------------------------------
-
-def test_engine_handles_unsupported_broker_event_error() -> None:
-    """Ensures that an unknown event category triggers an immediate execution halt."""
-    bot = FakeBot()
-    broker = FakeBrokerAdapter()
-    registry = ContractRegistry(specifications={})
-    sizer = create_position_sizer_factory()
-
-    engine = AegisExecutionEngine(
-        bot=bot,
-        broker_adapter=broker,
-        contract_registry=registry,
-        position_sizer=sizer,
-    )
-
-    # Inject a corrupted or unhandled infrastructure event type wrapper
-    corrupted_event = BrokerEvent(event_type="INVALID_TYPE", payload={})
-
-    with pytest.raises(UnsupportedBrokerEventError):
-        engine._process_broker_event(corrupted_event)
-
-# -----------------------------------------------------------------------------
-
-def test_engine_order_notification_untracked_circuit_breaker() -> None:
-    """Ensures unrecognized order receipts trigger an immediate execution halt."""
-    bot = FakeBot()
-    broker = FakeBrokerAdapter()
-    registry = create_contract_registry_factory()
-    sizer = create_position_sizer_factory()
-
-    engine = AegisExecutionEngine(
-        bot=bot,
-        broker_adapter=broker,
-        contract_registry=registry,
-        position_sizer=sizer,
-    )
-
-    # Inject an order receipt with an unrecognized group identifier
-    receipt = create_order_receipt_factory(
-        group_id='GHOST-GROUP',
-        client_order_id='GHOST-ORDER',
-    )
-    corrupted_event = BrokerEvent(
-        event_type=EventType.ORDER_NOTIFICATION,
-        payload=receipt,
-    )
-
-    with pytest.raises(UntrackedOrderException, match='is untracked'):
-        engine._process_broker_event(corrupted_event)
-
-# -----------------------------------------------------------------------------
-
-def test_engine_raises_duplicate_order_group_error_on_collision() -> None:
-    """Ensures that registering an existing group ID triggers an immediate halt."""
-    bot = FakeBot()
-    broker = FakeBrokerAdapter()
-    registry = ContractRegistry(specifications={})
-    sizer = create_position_sizer_factory()
-
-    engine = AegisExecutionEngine(
-        bot=bot,
-        broker_adapter=broker,
-        contract_registry=registry,
-        position_sizer=sizer,
-    )
-
-    # Pre-populate the volatile memory with a pre-existing group entry
-    existing_order = create_order_factory()
-    engine._register_order_group(existing_order)
-
-    # Attempt to register the exact same order structure again to trigger collision
-    with pytest.raises(DuplicateOrderGroupError):
-        engine._register_order_group(existing_order)
-
-# -----------------------------------------------------------------------------
-
-def test_engine_reconciles_order_lifecycle_and_maintains_active_group() -> None:
-    """Ensures parent order fulfillment transitions group to active state in RAM."""
-    bot = FakeBot()
-    broker = FakeBrokerAdapter()
-    registry = create_contract_registry_factory()
-    sizer = create_position_sizer_factory()
-
-    engine = AegisExecutionEngine(
-        bot=bot,
-        broker_adapter=broker,
-        contract_registry=registry,
-        position_sizer=sizer,
-    )
-
-    # Seed the volatile execution registry with an active pending trade intent
-    parent_order = create_order_factory()
-    engine._register_order_group(parent_order)
-    order_id = parent_order.client_order_id
-
-    assert len(engine._order_groups) == 1
-    current_stored_group = engine._order_groups[order_id]
-    assert not current_stored_group.is_terminal
-
-    # Synthesize a transaction lifecycle response marking execution fulfillment
-    receipt = create_order_receipt_factory(
-        group_id=order_id,
-        client_order_id=order_id,
-        state=OrderState.FILLED,
-    )
-    notification_event = BrokerEvent(
-        event_type=EventType.ORDER_NOTIFICATION,
-        payload=receipt,
-    )
-
-    # Route transmission through the main entry point dispatcher
-    engine._process_broker_event(notification_event)
-
-    # Assert that the group remains alive in RAM under the active exposure flag
-    assert len(engine._order_groups) == 1
-    assert not current_stored_group.is_terminal
-
-# -----------------------------------------------------------------------------
-
-def test_engine_reconciles_parent_rejection_and_evicts_group_cleanly() -> None:
-    """Ensures parent rejection triggers immediate RAM eviction if no children exist."""
-    bot = FakeBot()
-    broker = FakeBrokerAdapter()
-    registry = create_contract_registry_factory()
-    sizer = create_position_sizer_factory()
-
-    engine = AegisExecutionEngine(
-        bot=bot,
-        broker_adapter=broker,
-        contract_registry=registry,
-        position_sizer=sizer,
-    )
-
-    # Seed the volatile execution registry with an active pending trade intent
-    parent_order = create_order_factory(stop_loss_price=None, take_profit_price=None)
-    engine._register_order_group(parent_order)
-    order_id = parent_order.client_order_id
-
-    # Synthesize an infrastructure failure response marking rejection
-    receipt = create_order_receipt_factory(
-        group_id=order_id,
-        client_order_id=order_id,
-        state=OrderState.REJECTED,
-    )
-    notification_event = BrokerEvent(
-        event_type=EventType.ORDER_NOTIFICATION,
-        payload=receipt,
-    )
-
-    # Route transmission through the main entry point dispatcher
-    engine._process_broker_event(notification_event)
-
-    # Assert that the engine successfully evacuated the rejected group from RAM
-    assert len(engine._order_groups) == 0
-
-# -----------------------------------------------------------------------------
-
-def test_engine_trade_notification_reconciliation_logic() -> None:
-    """Verifies clearing receipts evaluate authorized unwinds vs external closures."""
-    bot = FakeBot()
-    broker = FakeBrokerAdapter()
-    registry = create_contract_registry_factory()
-    sizer = create_position_sizer_factory()
-
-    # --- Scenario A: Nominal Closing Sequence (Child Fills -> Clearing Confirms) ---
-    engine_a = AegisExecutionEngine(
-        bot=bot, broker_adapter=broker, contract_registry=registry, position_sizer=sizer
-    )
-    # Inject prices to ensure the engine unfolds protective child sub-orders
-    parent_a = create_order_factory(
-        client_order_id='A1',
-        stop_loss_price=Decimal('1.0750'),
-        take_profit_price=Decimal('1.0950'),
-    )
-    engine_a._register_order_group(parent_a)
-    group_a = engine_a._order_groups['A1']
-
-    # Parent execution triggers active exposure
-    engine_a._process_broker_event(BrokerEvent(
-        event_type=EventType.ORDER_NOTIFICATION,
-        payload=create_order_receipt_factory(
-            group_id='A1', client_order_id='A1', state=OrderState.FILLED
-        )
-    ))
-
-    # Child protection fills triggering closing sequester state
-    engine_a._process_broker_event(BrokerEvent(
-        event_type=EventType.ORDER_NOTIFICATION,
-        payload=create_order_receipt_factory(
-            group_id='A1', client_order_id='A1-SL', state=OrderState.FILLED
-        )
-    ))
-    assert not group_a.is_terminal
-    assert 'A1' in engine_a._order_groups
-
-    # Brother protection gets canceled cleanly post matching
-    engine_a._process_broker_event(BrokerEvent(
-        event_type=EventType.ORDER_NOTIFICATION,
-        payload=create_order_receipt_factory(
-            group_id='A1', client_order_id='A1-TP', state=OrderState.CANCELED
-        )
-    ))
-
-    # Clearing notification confirms inventory flat -> RAM evacuation triggered
-    engine_a._process_broker_event(BrokerEvent(
-        event_type=EventType.TRADE_NOTIFICATION,
-        payload=create_trade_receipt_factory(group_id='A1', is_open=False)
-    ))
-    assert 'A1' not in engine_a._order_groups
-
-    # --- Scenario B: Severe Rupture (Clandestine External Position Closure) ---
-    engine_b = AegisExecutionEngine(
-        bot=bot, broker_adapter=broker, contract_registry=registry, position_sizer=sizer
-    )
-    # Inject prices here as well to maintain structural consistency
-    parent_b = create_order_factory(
-        client_order_id='B1',
-        stop_loss_price=Decimal('1.0750'),
-        take_profit_price=Decimal('1.0950'),
-    )
-    engine_b._register_order_group(parent_b)
-
-    # Parent execution triggers active exposure
-    engine_b._process_broker_event(BrokerEvent(
-        event_type=EventType.ORDER_NOTIFICATION,
-        payload=create_order_receipt_factory(
-            group_id='B1', client_order_id='B1', state=OrderState.FILLED
-        )
-    ))
-
-    # Clearing notification arrives flat while group is ACTIVE (no child ever filled)
-    with pytest.raises(CorruptedOrderGroupError):
-        engine_b._process_broker_event(BrokerEvent(
-            event_type=EventType.TRADE_NOTIFICATION,
-            payload=create_trade_receipt_factory(group_id='B1', is_open=False)
-        ))
-
-    # Assert the engine did not evicted corrupted group
-    assert 'B1' in engine_b._order_groups
-
-# -----------------------------------------------------------------------------
-
-def test_engine_trade_notification_untracked_circuit_breaker() -> None:
-    """Ensures unrecognized trade receipts trigger an immediate execution halt."""
-    bot = FakeBot()
-    broker = FakeBrokerAdapter()
-    registry = create_contract_registry_factory()
-    sizer = create_position_sizer_factory()
-
-    engine = AegisExecutionEngine(
-        bot=bot,
-        broker_adapter=broker,
-        contract_registry=registry,
-        position_sizer=sizer,
-    )
-
-    # Inject a trade receipt with an unrecognized group identifier
-    receipt = create_trade_receipt_factory(
-        group_id='GHOST-GROUP',
-        is_open=True,
-    )
-    corrupted_event = BrokerEvent(
-        event_type=EventType.TRADE_NOTIFICATION,
-        payload=receipt,
-    )
-
-    with pytest.raises(UntrackedOrderException, match='is untracked'):
-        engine._process_broker_event(corrupted_event)
 
 # =============================================================================
 # -----------------------------------------------------------------------------
