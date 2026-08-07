@@ -55,8 +55,9 @@ class BacktraderProxyStrategy(bt.Strategy):
 
     def start(self) -> None:
         """Executes the framework startup hook and submits the instance reference."""
-        super().start()
         self._bridge.bind_strategy(self)
+        # Freeze the infra thread until the engine is ready.
+        self._bridge.wait_engine_is_ready()
 
 # -----------------------------------------------------------------------------
 

@@ -45,6 +45,8 @@ class BacktraderBridge:
         self._lock = threading.RLock()  # Reentrant lock guarding concurrent execution boundaries
         self._strategy = None
         self._is_completed = False
+        # Barrier to block infra thread until engine is in loop cycle
+        self._start_event = threading.Event()
 
 # -----------------------------------------------------------------------------
 
@@ -122,6 +124,12 @@ class BacktraderBridge:
 
 # -----------------------------------------------------------------------------
 
+    def signal_engine_is_ready(self) -> None:
+        """Signals that the domain thread (engine) is ready."""
+        self._start_event.set()
+
+# -----------------------------------------------------------------------------
+
     def submit_event(self, event_type: EventType, data: Any) -> None:
         """Dispatches external framework updates and coordinates temporal positioning.
 
@@ -144,6 +152,12 @@ class BacktraderBridge:
                 pass
         else:
             self._broker_queue.put((event_type, data))
+
+# -----------------------------------------------------------------------------
+
+    def wait_engine_is_ready(self) -> None:
+        """Block until the engine thread is ready."""
+        self._start_event.wait()
 
 # =============================================================================
 # -----------------------------------------------------------------------------
