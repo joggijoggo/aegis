@@ -84,13 +84,7 @@ class ExecutionTracker:
             )
 
         receipt = broker_event.payload
-        client_order_id = None
-
-        # TODO: Remove this block once TRADE_NOTIFICATION is unified with ORDER_NOTIFICATION.
-        if broker_event.event_type == EventType.ORDER_NOTIFICATION:
-            client_order_id = receipt.client_order_id
-        elif broker_event.event_type == EventType.TRADE_NOTIFICATION:
-            client_order_id = receipt.group_id
+        client_order_id = receipt.group_id
 
         if client_order_id not in self._order_id_to_bot_id:
             raise UntrackedOrderException(

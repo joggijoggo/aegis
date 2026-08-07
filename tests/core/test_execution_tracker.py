@@ -111,7 +111,7 @@ def test_execution_tracker_routes_order_notification_nominally() -> None:
     tracker.register_order('BOT_TEST_A', domain_order)
     assert tracker.has_active_execution('BOT_TEST_A')
 
-    receipt = create_order_receipt_factory(client_order_id='ORDER_123')
+    receipt = create_order_receipt_factory(group_id='ORDER_123')
     broker_event = BrokerEvent(event_type=EventType.ORDER_NOTIFICATION, payload=receipt)
 
     with (
@@ -158,7 +158,7 @@ def test_execution_tracker_clears_memory_on_terminal_state() -> None:
     tracker.register_order('BOT_TEST_A', domain_order)
     assert tracker.has_active_execution('BOT_TEST_A')
 
-    receipt = create_order_receipt_factory(client_order_id='ORDER_123')
+    receipt = create_order_receipt_factory(group_id='ORDER_123')
     broker_event = BrokerEvent(event_type=EventType.ORDER_NOTIFICATION, payload=receipt)
 
     with (
@@ -176,7 +176,7 @@ def test_execution_tracker_clears_memory_on_terminal_state() -> None:
 def test_execution_tracker_process_broker_event_raises_untracked_order() -> None:
     """Verify that processing an event for an unrecognized order ID raises an error."""
     tracker = ExecutionTracker()
-    receipt = create_order_receipt_factory(client_order_id='UNKNOWN_ID')
+    receipt = create_order_receipt_factory(group_id='UNKNOWN_ID')
     broker_event = BrokerEvent(event_type=EventType.ORDER_NOTIFICATION, payload=receipt)
 
     with pytest.raises(UntrackedOrderException) as exc_info:
