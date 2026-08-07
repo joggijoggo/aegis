@@ -39,7 +39,6 @@ class BacktraderBridge:
 
     def __init__(self) -> None:
         """Initializes the bridge synchronization queues and tracking states."""
-        self._advance_event = threading.Event()
         self._market_queue: Queue = Queue()
         self._broker_queue: Queue = Queue()
         self._lock = threading.RLock()  # Reentrant lock guarding concurrent execution boundaries
@@ -48,11 +47,16 @@ class BacktraderBridge:
         # Barrier to block infra thread until engine is in loop cycle
         self._start_event = threading.Event()
 
+        self._cv = threading.Condition()
+        self._ready_to_advance = False
+
 # -----------------------------------------------------------------------------
 
     def advance_time(self) -> None:
         """Signals the background execution loop to progress by a single increment."""
-        self._advance_event.set()
+        with self._cv:
+            self._ready_to_advance = True
+            self._cv.notify_all()
 
 # -----------------------------------------------------------------------------
 
@@ -103,7 +107,6 @@ class BacktraderBridge:
     def stop_simulation(self) -> None:
         """Flags the historical simulation loop as terminated."""
         self._is_completed = True
-        self._advance_event.set()
 
 # -----------------------------------------------------------------------------
 
@@ -141,13 +144,18 @@ class BacktraderBridge:
             return
 
         if event_type == EventType.MARKET_TICK:
-            self._advance_event.clear()
-            self._market_queue.put(data)
-            self._advance_event.wait()
+            # Reset the state variable BEFORE locking or queueing
+            with self._cv:
+                self._ready_to_advance = False
 
-            # Enforce a reentrant structural lock barrier immediately upon wake up.
-            # This blocks Cerebro from advancing to broker.next() -> check_submitted()
-            # if the domain thread is currently inside submit_order().
+            # Push to the queue OUTSIDE the lock to prevent re-entrant deadlocks
+            self._market_queue.put(data)
+
+            # Block until the engine explicitly signals that time has advanced
+            with self._cv:
+                while not self._ready_to_advance:
+                    self._cv.wait()
+
             with self._lock:
                 pass
         else:
