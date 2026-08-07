@@ -84,29 +84,37 @@ class AegisExecutionEngine:
                     market_context=market_context,
                     historical_values=buffer.to_list(),
                 )
+                bot_id = 'BOT_ID' # TODO: Retrieve it from bot.
 
                 if exposure_intent.is_flat():
-                    continue
+                    pass # Nothing to do.
+                elif exposure_intent.is_exit():
+                    if not self._tracker.has_active_execution(bot_id):
+                        pass # Nothing to do.
+                    else:
+                        self._tracker.terminate_execution(
+                            bot_id=bot_id,
+                            broker_adapter=self._broker_adapter,
+                        )
+                elif exposure_intent.is_entry():
+                    if self._tracker.has_active_execution(bot_id):
+                        pass # TODO: handle EDGING.
+                    else:
+                        contract_specification = (
+                            self._contract_registry.get_specification(symbol)
+                        )
 
-                if exposure_intent.is_exit():
-                    raise NotImplementedError('Close position')
+                        order = self._position_sizer.create_order(
+                            exposure_intent=exposure_intent,
+                            risk_percent=self._risk_percent,
+                            contract_specification=contract_specification,
+                            account_snapshot=broker_snapshot.account,
+                            market_context=market_context,
+                        )
 
-                contract_specification = (
-                    self._contract_registry.get_specification(symbol)
-                )
-
-                order = self._position_sizer.create_order(
-                    exposure_intent=exposure_intent,
-                    risk_percent=self._risk_percent,
-                    contract_specification=contract_specification,
-                    account_snapshot=broker_snapshot.account,
-                    market_context=market_context,
-                )
-
-                # Record the tracking container prior to infrastructure transmission.
-                self._tracker.register_order(bot_id='BOT_A', order=order)
-
-                self._broker_adapter.submit_order(order)
+                        # Record the tracking container prior to infrastructure transmission.
+                        self._tracker.register_order(bot_id=bot_id, order=order)
+                        self._broker_adapter.submit_order(order)
         except StopIteration:
             pass
 
