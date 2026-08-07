@@ -421,9 +421,6 @@ class BacktraderBrokerAdapter(BaseBrokerAdapter):
 
     def has_pending_events(self) -> bool:
         """Indicates whether unread broker events are available."""
-        # HACK: We use the first call to has_pending_events() to signal that
-        # the engine has started its first cycle loop.
-        self._bridge.signal_engine_is_ready()
         return not self._broker_queue.empty()
 
 # -----------------------------------------------------------------------------

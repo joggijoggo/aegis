@@ -197,16 +197,16 @@ class AegisExecutionEngine:
             while True:
                 # print(f'\n{"-"*50} NEW CYCLE {"-"*50}')
 
+                market_context = next(market_feed)
+                buffer.append(value=market_context.prices.mid_price)
+
+                broker_snapshot = self._broker_adapter.get_broker_snapshot()
+
                 # Flush and process asynchronous broker updates before market evaluation
                 while self._broker_adapter.has_pending_events():
                     broker_event = self._broker_adapter.poll_event()
                     # print(broker_event)
                     self._process_broker_event(broker_event)
-
-                market_context = next(market_feed)
-                buffer.append(value=market_context.prices.mid_price)
-
-                broker_snapshot = self._broker_adapter.get_broker_snapshot()
 
                 exposure_intent = self._bot.evaluate(
                     market_context=market_context,

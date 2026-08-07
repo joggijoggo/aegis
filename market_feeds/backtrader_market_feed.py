@@ -45,6 +45,8 @@ class BacktraderMarketFeed(BaseMarketFeed):
         Raises:
             StopIteration: Exhaustion of the data source.
         """
+        self._bridge.signal_engine_is_ready()
+
         if self._bridge.is_simulation_completed():
             raise StopIteration
 
