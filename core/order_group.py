@@ -237,7 +237,49 @@ class OrderGroup:
 
 # -----------------------------------------------------------------------------
 
-    @property
+    def get_parent_order(self) -> Order:
+        """Retrieves the root execution order anchoring this tracking group.
+
+        Returns:
+            The parent domain order instance.
+        """
+        return self._orders[self._parent_id]
+
+# -----------------------------------------------------------------------------
+
+    def is_cancelable(self) -> bool:
+        """Checks whether the order group can be canceled.
+
+        Returns:
+            True if the group is cancelable, False otherwise.
+        """
+        return self._state == OrderGroupState.PENDING and self._clearing_closed is None
+
+# -----------------------------------------------------------------------------
+
+    def is_closable(self) -> bool:
+        """Determines whether the established market exposure can be liquidated.
+
+        Returns:
+            True if the group is closable, False otherwise.
+        """
+        # Exclude states that are already closing, aborting, dead, or corrupted.
+        if self._state not in (OrderGroupState.PENDING, OrderGroupState.ACTIVE):
+            return False
+
+        # Prevent double-liquidation if the clearing closed the position ahead of the book.
+        if self._clearing_closed is True:
+            return False
+
+        # Nominal active path: book confirms matching and clearing has not signaled closure.
+        if self._state == OrderGroupState.ACTIVE:
+            return True
+
+        # Race condition path: clearing opens exposure while parent book status is delayed.
+        return self._clearing_closed is False
+
+# -----------------------------------------------------------------------------
+
     def is_terminal(self) -> bool:
         """Determines if the group execution cycle is completely dead or closed."""
         return self._state.is_terminal

@@ -56,6 +56,10 @@ class OrderSide(StrEnum):
     BUY = 'BUY'
     SELL = 'SELL'
 
+    def reverse(self):
+        """Returns the opposite side."""
+        return OrderSide.SELL if self == OrderSide.BUY else OrderSide.BUY
+
 # -----------------------------------------------------------------------------
 
 class OrderState(StrEnum):

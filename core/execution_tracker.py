@@ -1,0 +1,191 @@
+"""Aegis Framework - Trading bot execution registry.
+
+Tracks active transaction groups to isolate individual bot market exposure.
+"""
+
+from dataclasses import replace
+
+from broker_adapters.base_broker_adapter import BaseBrokerAdapter
+from core.exceptions import (
+    DanglingExecutionError,
+    NettingRestrictionError,
+    UnsupportedBrokerEventError,
+    UntrackedOrderException,
+)
+from core.models import (
+    BrokerEvent,
+    EventType,
+    Order,
+    OrderType,
+)
+from core.order_group import OrderGroup
+
+# =============================================================================
+# -----------------------------------------------------------------------------
+# =============================================================================
+
+class ExecutionTracker:
+    """Memory ledger tracking active order groups indexed by bot identifier."""
+
+# -----------------------------------------------------------------------------
+
+    def __init__(self) -> None:
+        """Initialize an empty execution tracking ledger."""
+        self._executions: dict[str, OrderGroup] = {}
+        self._order_id_to_bot_id: dict[str, str] = {}
+
+# -----------------------------------------------------------------------------
+
+    def _clear_execution_context(self, bot_id: str) -> None:
+        """Purge all structural tracking references from internal RAM structures.
+
+        Args:
+            bot_id: The unique identifier of the target trading bot.
+        """
+        # Reverse lookup since order group does not expose its order.
+        keys_to_remove = [
+            order_id
+            for order_id, mapped_bot_id in self._order_id_to_bot_id.items()
+            if mapped_bot_id == bot_id
+        ]
+
+        for order_id in keys_to_remove:
+            self._order_id_to_bot_id.pop(order_id, None)
+
+        self._executions.pop(bot_id, None)
+
+# -----------------------------------------------------------------------------
+
+    def has_active_execution(self, bot_id: str) -> bool:
+        """Check if the specified bot has an active execution context.
+
+        Args:
+            bot_id: The unique identifier of the trading bot.
+
+        Returns:
+            True if an active execution exists, False otherwise.
+        """
+        return bot_id in self._executions
+
+# -----------------------------------------------------------------------------
+
+    def process_broker_event(self, broker_event: BrokerEvent) -> None:
+        """Process an incoming broker event to update or clear execution states.
+
+        Args:
+            broker_event: The structural broker notification to evaluate.
+        """
+        valid_event_type = [EventType.ORDER_NOTIFICATION, EventType.TRADE_NOTIFICATION]
+
+        if broker_event.event_type not in valid_event_type:
+            raise UnsupportedBrokerEventError(
+                f"Received unhandled or corrupted event type: {broker_event.event_type}"
+            )
+
+        receipt = broker_event.payload
+        client_order_id = receipt.group_id
+
+        if client_order_id not in self._order_id_to_bot_id:
+            raise UntrackedOrderException(
+                f"Broker event mismatch: order identity '{client_order_id}' is untracked."
+            )
+
+        bot_id = self._order_id_to_bot_id[client_order_id]
+        order_group = self._executions[bot_id]
+
+        if broker_event.event_type == EventType.ORDER_NOTIFICATION:
+            order_group.notify_order_change(receipt)
+        elif broker_event.event_type == EventType.TRADE_NOTIFICATION:
+            order_group.notify_trade_change(receipt)
+
+        if order_group.is_terminal():
+            self._clear_execution_context(bot_id)
+
+# -----------------------------------------------------------------------------
+
+    def register_order(self, bot_id: str, order: Order) -> None:
+        """Register an initial order to instantiate an active execution group.
+
+        Args:
+            bot_id: The unique identifier of the trading bot.
+            order: The initial order anchoring the execution.
+        """
+        if self.has_active_execution(bot_id):
+            raise NettingRestrictionError(
+                f'Netting rule restriction prevents bot "{bot_id}" '
+                f'from establishing concurrent executions.'
+            )
+
+        orders: list[Order] = [order]
+
+        child_side = order.side.reverse()
+        child_base = replace(
+            order,
+            side=child_side,
+            stop_loss_price=None,
+            take_profit_price=None,
+        )
+
+        if order.stop_loss_price is not None:
+            sl_order = replace(
+                child_base,
+                client_order_id=f'{order.client_order_id}-SL',
+                order_type=OrderType.STOP,
+                price=order.stop_loss_price,
+            )
+            orders.append(sl_order)
+
+        if order.take_profit_price is not None:
+            tp_order = replace(
+                child_base,
+                client_order_id=f'{order.client_order_id}-TP',
+                order_type=OrderType.LIMIT,
+                price=order.take_profit_price,
+            )
+            orders.append(tp_order)
+
+        order_group = OrderGroup(
+            parent_id=order.client_order_id,
+            orders=orders,
+        )
+
+        for bracket_order in orders:
+            self._order_id_to_bot_id[bracket_order.client_order_id] = bot_id
+
+        self._executions[bot_id] = order_group
+
+# -----------------------------------------------------------------------------
+
+    def terminate_execution(self, bot_id: str, broker_adapter: BaseBrokerAdapter) -> None:
+        """Force immediate market liquidation or cancellation for a targeted bot.
+
+        Args:
+            bot_id: The unique identifier of the target trading bot.
+            broker_adapter: The infrastructure adapter handling network commands.
+        """
+        if not self.has_active_execution(bot_id):
+            raise UntrackedOrderException(
+                f"Termination failure: bot '{bot_id}' has no active "
+                f"execution group registered in memory."
+            )
+
+        order_group = self._executions[bot_id]
+        parent_order = order_group.get_parent_order()
+
+        if order_group.is_cancelable():
+            broker_adapter.cancel_order(parent_order)
+        elif order_group.is_closable():
+            broker_adapter.close_position(parent_order)
+        elif order_group.is_terminal():
+            raise DanglingExecutionError(
+                f"Termination failure: bot '{bot_id}' execution group "
+                f"is already terminal but was not evicted from memory."
+            )
+        else:
+            # Active asynchronous transitional phase (CLOSING, REJECTING).
+            # Network commands are already processing. Do not touch RAM or network.
+            pass
+
+# =============================================================================
+# -----------------------------------------------------------------------------
+# =============================================================================

@@ -35,6 +35,18 @@ class ExposureIntent:
     stop_loss_ticks: float = 0.0
     take_profit_ticks: float = 0.0
 
+    def is_entry(self) -> bool:
+        """Check if the intent signals a desire to enter or reverse a position."""
+        return not self.is_flat() and self.alpha_direction != 0.0
+
+    def is_exit(self) -> bool:
+        """Check if the intent explicitly signals a portfolio liquidation command."""
+        return self.alpha_direction == 0.0
+
+    def is_flat(self) -> bool:
+        """Check if the intent represents a neutral status with no active opinion."""
+        return self.alpha_direction is None
+
 # -----------------------------------------------------------------------------
 
 @dataclass(frozen=True)

@@ -13,7 +13,11 @@ import backtrader as bt
 
 from broker_adapters.backtrader_bridge import BacktraderBridge
 from broker_adapters.base_broker_adapter import BaseBrokerAdapter
-from core.exceptions import AegisError
+from core.exceptions import (
+    AegisError,
+    BrokerOrderNotFoundError,
+    BrokerPositionNotFoundError,
+)
 from core.models import (
     AccountSnapshot,
     BrokerEvent,
@@ -406,6 +410,46 @@ class BacktraderBrokerAdapter(BaseBrokerAdapter):
         return BrokerEvent(
             event_type=event_type,
             payload=payload,
+        )
+
+# -----------------------------------------------------------------------------
+
+    def cancel_order(self, order: Order) -> None:
+        """Cancel a working order in the market.
+
+        Args:
+            order: The target order to cancel.
+        """
+        strategy = self._bridge.strategy
+
+        for native_order in strategy.broker.get_orders_open():
+            if native_order.info.get('client_order_id') == order.client_order_id:
+                strategy.broker.cancel(native_order)
+                return
+
+        raise BrokerOrderNotFoundError(
+            f"Active ticket '{order.client_order_id}' is not registerd "
+            "within Backtrader's current open orders matrix."
+        )
+
+# -----------------------------------------------------------------------------
+
+    def close_position(self, order: Order) -> None:
+        """Close the market position associated with the given order.
+
+        Args:
+            order: The parent order that initiated the position.
+        """
+        target_data = self._resolve_data_feed(order.symbol)
+        position = self._bridge.strategy.positions.get(target_data)
+
+        if position is not None and position.size != 0:
+            self._bridge.strategy.close(data=target_data)
+            return
+
+        raise BrokerPositionNotFoundError(
+            f"Active exposure for symbol '{order.symbol}' is not registered "
+            "within Backtrader's current market matrix."
         )
 
 # -----------------------------------------------------------------------------

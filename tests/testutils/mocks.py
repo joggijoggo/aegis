@@ -103,6 +103,16 @@ class FakeBrokerAdapter(BaseBrokerAdapter):
 
 # -----------------------------------------------------------------------------
 
+    def cancel_order(self, order: Order) -> None:
+        pass
+
+# -----------------------------------------------------------------------------
+
+    def close_position(self, order: Order) -> None:
+        pass
+
+# -----------------------------------------------------------------------------
+
     def submit_order(self, order: Order) -> None:
         """Submits the execution order request to the fake venue ledger.
 
