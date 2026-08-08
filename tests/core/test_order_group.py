@@ -945,3 +945,73 @@ def test_computed_state_returns_closing_on_nominal_protection_fill() -> None:
 # =============================================================================
 # -----------------------------------------------------------------------------
 # =============================================================================
+
+def test_order_group_filters_late_out_of_order_pending_packet() -> None:
+    """Verify that a late pending receipt does not overwrite a terminal fill."""
+    order_group = OrderGroup(
+        parent_id='O1',
+        orders=[create_order_factory(client_order_id='O1')],
+    )
+
+    # Initial ledger position must be flat before any execution
+    assert order_group.ledger.position_size == Decimal('0.0')
+
+    fill_receipt = create_order_receipt_factory(
+        group_id='O1',
+        client_order_id='O1',
+        state=OrderState.FILLED,
+        executed_quantity=Decimal('10.0'),
+        average_execution_price=Decimal('100.0'),
+    )
+    order_group.notify_order_change(fill_receipt)
+
+    # Ledger must register the open position following nominal execution
+    assert order_group.ledger.position_size == Decimal('10.0')
+
+    # Simulate network race condition: late pending packet arrives afterwards
+    late_pending_receipt = create_order_receipt_factory(
+        group_id='O1',
+        client_order_id='O1',
+        state=OrderState.PENDING,
+        executed_quantity=Decimal('0.0'),
+    )
+    order_group.notify_order_change(late_pending_receipt)
+
+    # Invariant: Late packet is dropped, ledger position remains strictly unchanged
+    assert order_group._order_states['O1'] == OrderState.FILLED
+    assert order_group.ledger.position_size == Decimal('10.0')
+
+# -----------------------------------------------------------------------------
+
+def test_order_group_absorbs_duplicate_network_packets_silently() -> None:
+    """Verify that duplicate filled receipts do not trigger double ledger updates."""
+    order_group = OrderGroup(
+        parent_id='O1',
+        orders=[create_order_factory(client_order_id='O1')],
+    )
+
+    # Initial ledger position must be flat before network noise
+    assert order_group.ledger.position_size == Decimal('0.0')
+
+    fill_receipt = create_order_receipt_factory(
+        group_id='O1',
+        client_order_id='O1',
+        state=OrderState.FILLED,
+        executed_quantity=Decimal('10.0'),
+        average_execution_price=Decimal('100.0'),
+    )
+
+    # First packet ingestion moves ledger to open state
+    order_group.notify_order_change(fill_receipt)
+    assert order_group.ledger.position_size == Decimal('10.0')
+
+    # Second packet ingestion simulates network duplication noise
+    order_group.notify_order_change(fill_receipt)
+
+    # Invariant: Duplicate is filtered, protecting ledger from double volume entry
+    assert order_group._order_states['O1'] == OrderState.FILLED
+    assert order_group.ledger.position_size == Decimal('10.0')
+
+# =============================================================================
+# -----------------------------------------------------------------------------
+# =============================================================================

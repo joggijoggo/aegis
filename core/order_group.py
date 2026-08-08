@@ -27,6 +27,16 @@ from core.models import (
 class OrderGroup:
     """Operational entity enforcing structural alignment over contingent orders."""
 
+    # Anticipative state weight mapping to filter network packet ordering faults
+    _STATE_WEIGHTS: dict[OrderState, int] = {
+        OrderState.PENDING: 0,
+        # TODO: Add OrderState.PARTIALLY_FILLED: 1, once incremental fills are integrated
+        OrderState.FILLED: 2,
+        OrderState.CANCELED: 2,
+        # TODO: Add OrderState.EXPIRED: 2, once time-in-force are integrated.
+        OrderState.REJECTED: 2,
+    }
+
     # Guardrails targeting unhandled microstructural infrastructure states
     _UNSUPPORTED_STATES = {OrderState.PARTIALLY_FILLED, OrderState.EXPIRED}
 
@@ -181,6 +191,15 @@ class OrderGroup:
                 f'Order "{order_receipt.client_order_id}" not found '
                 f'in group "{self._parent_id}".'
             )
+
+        current_state = self._order_states[order_receipt.client_order_id]
+        incoming_weight = self._STATE_WEIGHTS[order_receipt.state]
+        current_weight = self._STATE_WEIGHTS[current_state]
+
+        # Silently drop network duplicates or late out-of-order packets
+        if incoming_weight <= current_weight:
+            # TODO: log or warn.
+            return
 
         self._order_states[order_receipt.client_order_id] = order_receipt.state
 
