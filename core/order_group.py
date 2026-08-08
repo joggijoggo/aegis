@@ -15,6 +15,7 @@ from core.exceptions import (
 from core.models import (
     Order,
     OrderGroupState,
+    OrderSide,
     OrderState,
     OrderReceipt,
     TradeReceipt,
@@ -148,6 +149,36 @@ class OrderGroup:
 
         # Race condition path: clearing opens exposure while parent book status is delayed.
         return self._clearing_closed is False
+
+# -----------------------------------------------------------------------------
+
+    def is_over_hedged(self) -> bool:
+        """Evaluates whether the group suffers from unmanaged market exposure.
+
+        Returns:
+            True if exposure is active but matching closing volume is insufficient,
+            False otherwise.
+        """
+        position = self._ledger.position_size
+
+        if position == Decimal('0.0'):
+            return False
+
+        required_side = OrderSide.SELL if position > Decimal('0.0') else OrderSide.BUY
+        pending_volume = Decimal('0.0')
+
+        # Aggregate working volumes facing exposure with a single filtered condition
+        for order_id, order_state in self._order_states.items():
+            if (
+                order_id != self._parent_id
+                and order_state == OrderState.PENDING
+                and self._orders[order_id].side == required_side
+            ):
+                pending_volume += self._orders[order_id].quantity
+
+        # Strict inequality allows bidirectional bracket orders (SL and TP) to
+        # coexist at PENDING state during nominal cruise phase without triggering.
+        return pending_volume < abs(position)
 
 # -----------------------------------------------------------------------------
 

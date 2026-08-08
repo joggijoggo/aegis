@@ -1015,3 +1015,214 @@ def test_order_group_absorbs_duplicate_network_packets_silently() -> None:
 # =============================================================================
 # -----------------------------------------------------------------------------
 # =============================================================================
+
+def test_order_group_over_hedged_returns_false_in_nominal_bracket_cruise() -> None:
+    """Verify that bidirectional bracket protections clear the check."""
+    parent_order = create_order_factory(client_order_id='O1')
+    sl_order = create_order_factory(
+        client_order_id='O1-SL',
+        side=OrderSide.SELL,
+        quantity=Decimal('10.0'),
+    )
+    tp_order = create_order_factory(
+        client_order_id='O1-TP',
+        side=OrderSide.SELL,
+        quantity=Decimal('10.0'),
+    )
+
+    order_group = OrderGroup(
+        parent_id='O1',
+        orders=[parent_order, sl_order, tp_order],
+    )
+
+    # Open physical market position via parent fill receipt
+    parent_receipt = create_order_receipt_factory(
+        group_id='O1',
+        client_order_id='O1',
+        state=OrderState.FILLED,
+        executed_quantity=Decimal('10.0'),
+        average_execution_price=Decimal('100.0'),
+    )
+    order_group.notify_order_change(parent_receipt)
+
+    # Invariants verification: ledger is open, bracket orders are working
+    assert order_group.ledger.position_size == Decimal('10.0')
+    assert order_group._order_states['O1-SL'] == OrderState.PENDING
+    assert order_group._order_states['O1-TP'] == OrderState.PENDING
+
+    # Call the diagnostic function: aggregate volume >= position
+    assert order_group.is_over_hedged() is False
+
+# -----------------------------------------------------------------------------
+
+def test_order_group_over_hedged_intercepts_insufficient_protection() -> None:
+    """Verify that an orphan position triggers the over-hedged condition."""
+    parent_order = create_order_factory(
+        client_order_id='O1',
+        quantity=Decimal('10.0'),
+    )
+    sl_order = create_order_factory(
+        client_order_id='O1-SL',
+        side=OrderSide.SELL,
+        quantity=Decimal('10.0'),
+    )
+    tp_order = create_order_factory(
+        client_order_id='O1-TP',
+        side=OrderSide.SELL,
+        quantity=Decimal('10.0'),
+    )
+
+    order_group = OrderGroup(
+        parent_id='O1',
+        orders=[parent_order, sl_order, tp_order],
+    )
+
+    # Open physical position
+    parent_receipt = create_order_receipt_factory(
+        group_id='O1',
+        client_order_id='O1',
+        state=OrderState.FILLED,
+        executed_quantity=Decimal('10.0'),
+        average_execution_price=Decimal('100.0'),
+    )
+    order_group.notify_order_change(parent_receipt)
+
+    # Simulate market rupture: Take-Profit is canceled by the venue
+    tp_receipt = create_order_receipt_factory(
+        group_id='O1',
+        client_order_id='O1-TP',
+        state=OrderState.CANCELED,
+        executed_quantity=Decimal('0.0'),
+    )
+    order_group.notify_order_change(tp_receipt)
+
+    # Invariants verification: ledger is open (+10.0) but only SL remains
+    assert order_group.ledger.position_size == Decimal('10.0')
+    assert order_group._order_states['O1-SL'] == OrderState.PENDING
+    assert order_group._order_states['O1-TP'] == OrderState.CANCELED
+
+    # Protection volume drops from 20.0 to 10.0. Still equal to position (10.0)
+    assert order_group.is_over_hedged() is False
+
+    # Simulate critical rupture: Stop-Loss is now canceled as well
+    sl_receipt = create_order_receipt_factory(
+        group_id='O1',
+        client_order_id='O1-SL',
+        state=OrderState.CANCELED,
+    )
+    order_group.notify_order_change(sl_receipt)
+
+    # Every closing contract is dead, net exposure (+10.0) is completely orphan
+    assert order_group._order_states['O1-SL'] == OrderState.CANCELED
+    assert order_group.is_over_hedged() is True
+
+# -----------------------------------------------------------------------------
+
+def test_order_group_over_hedged_ignores_same_side_pending_orders() -> None:
+    """Verify that same-side working orders do not clear over-hedging."""
+    parent_order = create_order_factory(client_order_id='O1')
+    accumulation_order = create_order_factory(
+        client_order_id='O1-BUY2',
+        side=OrderSide.BUY,
+        quantity=Decimal('10.0'),
+    )
+
+    order_group = OrderGroup(
+        parent_id='O1',
+        orders=[parent_order, accumulation_order],
+    )
+
+    # Open physical long position via parent fill
+    parent_receipt = create_order_receipt_factory(
+        group_id='O1',
+        client_order_id='O1',
+        state=OrderState.FILLED,
+        executed_quantity=Decimal('10.0'),
+        average_execution_price=Decimal('100.0'),
+    )
+    order_group.notify_order_change(parent_receipt)
+
+    # Invariants verification: ledger is long (+10.0), second BUY is working
+    assert order_group.ledger.position_size == Decimal('10.0')
+    assert order_group._order_states['O1-BUY2'] == OrderState.PENDING
+
+    # Diagnostic check: the pending BUY must be ignored, returning True
+    assert order_group.is_over_hedged() is True
+
+# -----------------------------------------------------------------------------
+
+def test_order_group_is_over_hedged_returns_false_on_flat_exposure() -> None:
+    """Verify that a flat physical ledger position returns False immediately."""
+    parent_order = create_order_factory(client_order_id='O1')
+    sl_order = create_order_factory(
+        client_order_id='O1-SL',
+        side=OrderSide.SELL,
+        quantity=Decimal('10.0'),
+    )
+
+    order_group = OrderGroup(
+        parent_id='O1',
+        orders=[parent_order, sl_order],
+    )
+
+    # Invariants verification: ledger position is strictly flat at startup
+    assert order_group.ledger.position_size == Decimal('0.0')
+
+    # Call the diagnostic function to trigger the early flat return guard
+    assert order_group.is_over_hedged() is False
+
+# -----------------------------------------------------------------------------
+
+def test_order_group_over_hedged_intercepts_short_to_long_flip() -> None:
+    """Verify that a slippage inversion triggers the over-hedged check."""
+    parent_order = create_order_factory(
+        client_order_id='O1',
+        side=OrderSide.SELL,
+        quantity=Decimal('10.0'),
+    )
+    sl_order = create_order_factory(
+        client_order_id='O1-SL',
+        side=OrderSide.BUY,
+        quantity=Decimal('10.0'),
+    )
+
+    order_group = OrderGroup(
+        parent_id='O1',
+        orders=[parent_order, sl_order],
+    )
+
+    # Establish initial physical short exposure via parent fill
+    parent_receipt = create_order_receipt_factory(
+        group_id='O1',
+        client_order_id='O1',
+        state=OrderState.FILLED,
+        executed_quantity=Decimal('10.0'),
+        average_execution_price=Decimal('100.0'),
+    )
+    order_group.notify_order_change(parent_receipt)
+
+    # Invariants verification: ledger is short and protected by the BUY order
+    assert order_group.ledger.position_size == Decimal('-10.0')
+    assert order_group._order_states['O1-SL'] == OrderState.PENDING
+    assert order_group.is_over_hedged() is False
+
+    # Simulate violent slippage: BUY order executes for 11.0 lots instead of 10
+    sl_receipt = create_order_receipt_factory(
+        group_id='O1',
+        client_order_id='O1-SL',
+        state=OrderState.FILLED,
+        executed_quantity=Decimal('11.0'),
+        average_execution_price=Decimal('105.0'),
+    )
+    order_group.notify_order_change(sl_receipt)
+
+    # Ledger flips to an unmanaged long position (+1.0) while book is empty
+    assert order_group.ledger.position_size == Decimal('1.0')
+    assert order_group._order_states['O1-SL'] == OrderState.FILLED
+
+    # Diagnostic function must catch the orphan long lot and return True
+    assert order_group.is_over_hedged() is True
+
+# =============================================================================
+# -----------------------------------------------------------------------------
+# =============================================================================
