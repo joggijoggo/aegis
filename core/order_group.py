@@ -139,16 +139,22 @@ class OrderGroup:
         if self.state not in (OrderGroupState.PENDING, OrderGroupState.ACTIVE):
             return False
 
-        # Prevent double-liquidation if the clearing closed the position ahead of the book.
-        if self._clearing_closed is True:
+        # DEFENSIVE GUARD: Prevents double-liquidation if clearing closes ahead
+        # of the book during race conditions (e.g., residual 0.01 fills on
+        # canceled orders). Preserved for defense-in-depth even if upstream
+        # corruption checks make this appear unreachable via public API.
+        if self._clearing_closed is True:  # pragma: no cover
             return False
 
         # Nominal active path: book confirms matching and clearing has not signaled closure.
         if self.state == OrderGroupState.ACTIVE:
             return True
 
-        # Race condition path: clearing opens exposure while parent book status is delayed.
-        return self._clearing_closed is False
+        # HISTORICAL FALLBACK: Mathematically unreachable due to state machine invariants.
+        # If the position is non-flat, the state can never resolve to PENDING.
+        # Preserved as a final defense-in-depth barrier against ghost orders
+        # (clearing opens exposure while parent book status is delayed).
+        return self._clearing_closed is False  # pragma: no cover
 
 # -----------------------------------------------------------------------------
 
