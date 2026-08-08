@@ -601,6 +601,12 @@ def test_order_group_allows_liquidation_in_nominal_active_state() -> None:
     order_group._state = OrderGroupState.ACTIVE
     order_group._clearing_closed = False
 
+    order_group.ledger.update_exposure(
+        side=OrderSide.BUY,
+        quantity=Decimal('10.0'),
+        price=Decimal('100.0'),
+    )
+
     assert order_group.is_closable()
     assert not order_group.is_cancelable()
 
@@ -613,6 +619,12 @@ def test_order_group_allows_liquidation_on_open_clearing_race_condition() -> Non
 
     order_group._state = OrderGroupState.PENDING
     order_group._clearing_closed = False
+
+    order_group.ledger.update_exposure(
+        side=OrderSide.BUY,
+        quantity=Decimal('10.0'),
+        price=Decimal('100.0'),
+    )
 
     assert order_group.is_closable()
 
@@ -697,6 +709,12 @@ def test_order_group_allows_liquidation_on_book_priority_asynchronism() -> None:
 
     order_group._state = OrderGroupState.ACTIVE
     order_group._clearing_closed = None
+
+    order_group.ledger.update_exposure(
+        side=OrderSide.BUY,
+        quantity=Decimal('10.0'),
+        price=Decimal('100.0'),
+    )
 
     assert order_group.is_closable()
 
@@ -922,6 +940,100 @@ def test_order_group_missing_price_raises_clearing_corruption() -> None:
     expected_pattern = 'volume-weighted execution price was missing'
     with pytest.raises(ClearingCorruptionError, match=expected_pattern):
         group.notify_order_change(receipt)
+
+# =============================================================================
+# -----------------------------------------------------------------------------
+# =============================================================================
+
+def test_order_group_is_closable_locked_by_exit_order() -> None:
+    """Verify that an attached exit order instantly locks the closable check."""
+    parent_order = create_order_factory(
+        client_order_id='ORD_PARENT',
+        side=OrderSide.BUY,
+    )
+    group = OrderGroup(parent_id='ORD_PARENT', orders=[parent_order])
+
+    # Configure a nominally active state and open ledger volume
+    group._state = OrderGroupState.ACTIVE
+    group.ledger.update_exposure(
+        OrderSide.BUY,
+        Decimal('10.0'),
+        Decimal('100.0'),
+    )
+
+    # Attach the exit order to formalize the closing intent
+    exit_order = create_order_factory(
+        client_order_id='ORD_PARENT-XT',
+        side=OrderSide.SELL,
+    )
+    group.attach_exit_order(exit_order)
+
+    # The presence of the exit order must force the check to False
+    assert group.is_closable() is False
+
+# -----------------------------------------------------------------------------
+
+def test_order_group_is_closable_locked_by_flat_ledger() -> None:
+    """Verify that a flat ledger volume locks the closable check."""
+    parent_order = create_order_factory(
+        client_order_id='ORD_PARENT',
+        side=OrderSide.BUY,
+    )
+    group = OrderGroup(parent_id='ORD_PARENT', orders=[parent_order])
+
+    # Configure an active state but leave the ledger strictly at zero
+    group._state = OrderGroupState.ACTIVE
+    assert group.ledger.position_size == Decimal('0.0')
+
+    # The flat physical exposure must force the check to False
+    assert group.is_closable() is False
+
+# -----------------------------------------------------------------------------
+
+# TODO: HISTORICAL COMPLIANCE, REMOVE IT ONCE DATA-DRIVEN TRANSITION IS COMPLETED
+def test_order_group_is_closable_returns_false_on_invalid_state() -> None:
+    """Verify that an invalid group state blocks the closable check."""
+    parent_order = create_order_factory(
+        client_order_id='ORD_PARENT',
+        side=OrderSide.BUY,
+    )
+    group = OrderGroup(parent_id='ORD_PARENT', orders=[parent_order])
+
+    # Open physical exposure to clear the ledger check
+    group.ledger.update_exposure(
+        OrderSide.BUY,
+        Decimal('10.0'),
+        Decimal('100.0'),
+    )
+
+    # Force an invalid state to hit the exclusion guard
+    group._state = OrderGroupState.CORRUPTED
+
+    assert group.is_closable() is False
+
+# -----------------------------------------------------------------------------
+
+# TODO: HISTORICAL COMPLIANCE, REMOVE IT ONCE DATA-DRIVEN TRANSITION IS COMPLETED
+def test_order_group_is_closable_returns_false_when_clearing_closed() -> None:
+    """Verify that legacy clearing closed flag blocks the closable check."""
+    parent_order = create_order_factory(
+        client_order_id='ORD_PARENT',
+        side=OrderSide.BUY,
+    )
+    group = OrderGroup(parent_id='ORD_PARENT', orders=[parent_order])
+
+    # Open physical exposure to clear the ledger check
+    group.ledger.update_exposure(
+        OrderSide.BUY,
+        Decimal('10.0'),
+        Decimal('100.0'),
+    )
+
+    # Set nominal active state but force the legacy clearing flag to True
+    group._state = OrderGroupState.ACTIVE
+    group._clearing_closed = True
+
+    assert group.is_closable() is False
 
 # =============================================================================
 # -----------------------------------------------------------------------------

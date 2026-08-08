@@ -3,6 +3,8 @@
 Maintains structural integrity and execution alignment for contingent trading lifecycles.
 """
 
+from decimal import Decimal
+
 from core.clearing_ledger import ClearingLedger
 from core.exceptions import (
     ClearingCorruptionError,
@@ -294,6 +296,14 @@ class OrderGroup:
         Returns:
             True if the group is closable, False otherwise.
         """
+        # Hard intention lock preventing concurrent double-liquidation
+        if self._exit_order is not None:
+            return False
+
+        # Physical volume lock protecting against flat exposure clearance
+        if self._ledger.position_size == Decimal('0.0'):
+            return False
+
         # Exclude states that are already closing, aborting, dead, or corrupted.
         if self._state not in (OrderGroupState.PENDING, OrderGroupState.ACTIVE):
             return False
