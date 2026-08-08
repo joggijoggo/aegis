@@ -29,7 +29,6 @@ class OrderGroupState(StrEnum):
         CORRUPTED: Microstructural failure or protection rupture detected.
         PENDING: Group instantiated; awaiting parent entrance order execution.
         REJECTED: Parent entrance order failed or rejected upon submission.
-        REJECTING: Parent failed; group sequester waiting for child cancellations.
     """
     ACTIVE = 'ACTIVE'
     CANCELED = 'CANCELED'
@@ -38,7 +37,6 @@ class OrderGroupState(StrEnum):
     CORRUPTED = 'CORRUPTED'
     PENDING = 'PENDING'
     REJECTED = 'REJECTED'
-    REJECTING = 'REJECTING'
 
     @property
     def is_terminal(self) -> bool:

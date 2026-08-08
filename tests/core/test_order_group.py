@@ -9,11 +9,14 @@ from decimal import Decimal
 import pytest
 
 from core.exceptions import (
+    ClearingCorruptionError,
     CorruptedOrderGroupError,
+    NettingRestrictionError,
     UntrackedOrderException,
 )
 from core.models import (
     OrderGroupState,
+    OrderReceipt,
     OrderSide,
     OrderState,
     OrderType,
@@ -24,40 +27,6 @@ from tests.testutils import (
     create_order_receipt_factory,
     create_trade_receipt_factory,
 )
-
-# =============================================================================
-# -----------------------------------------------------------------------------
-# =============================================================================
-
-def test_order_group_matrices_coverage() -> None:
-    """Verifies that all possible state combinations are explicitly mapped in class matrices."""
-    # Isolate valid execution states by extracting the unsupported infrastructure frames
-    valid_order_states = [
-        state for state in OrderState
-        if state not in OrderGroup._UNSUPPORTED_STATES
-    ]
-
-    # Enforce absolute coverage mapping for the parent entrance matrix layout
-    for group_state in OrderGroupState:
-        for order_state in valid_order_states:
-            assert group_state in OrderGroup._PARENT_MATRIX, (
-                f'Missing parent matrix root mapping for group state: {group_state}'
-            )
-            assert order_state in OrderGroup._PARENT_MATRIX[group_state], (
-                f'Missing parent matrix transition definition for '
-                f'[{group_state}][{order_state}]'
-            )
-
-    # Enforce absolute coverage mapping for the child protection matrix layout
-    for group_state in OrderGroupState:
-        for order_state in valid_order_states:
-            assert group_state in OrderGroup._CHILD_MATRIX, (
-                f'Missing child matrix root mapping for group state: {group_state}'
-            )
-            assert order_state in OrderGroup._CHILD_MATRIX[group_state], (
-                f'Missing child matrix transition definition for '
-                f'[{group_state}][{order_state}]'
-            )
 
 # =============================================================================
 # -----------------------------------------------------------------------------
@@ -95,7 +64,7 @@ def test_order_group_initialization_nominal_topologies() -> None:
 
     # Validate absolute internal encapsulation parameters
     assert group._parent_id == 'ORD-FULL'
-    assert group._state == OrderGroupState.PENDING
+    assert group.state == OrderGroupState.PENDING
     assert group._clearing_closed is None  # Verify neutral 3-state baseline
     assert not group.is_terminal()
 
@@ -145,7 +114,7 @@ def test_order_group_unsupported_states_circuit_breaker() -> None:
         with pytest.raises(NotImplementedError, match='not supported in the current framework'):
             group.notify_order_change(receipt)
 
-        assert group._state == OrderGroupState.CORRUPTED
+        assert group.state == OrderGroupState.CORRUPTED
 
 # -----------------------------------------------------------------------------
 
@@ -163,7 +132,7 @@ def test_order_group_untracked_identity_circuit_breaker() -> None:
         group. notify_order_change(receipt)
 
     # Validate that no internal metrics have experienced drift
-    assert group._state == OrderGroupState.PENDING
+    assert group.state == OrderGroupState.PENDING
     assert group._order_states['ORD-01'] == OrderState.PENDING
 
 # -----------------------------------------------------------------------------
@@ -181,7 +150,7 @@ def test_order_group_corrupted_state_denies_mutations() -> None:
     )
     with pytest.raises(NotImplementedError):
         group.notify_order_change(receipt_unsupported)
-    assert group._state == OrderGroupState.CORRUPTED
+    assert group.state == OrderGroupState.CORRUPTED
 
     # Assert order change mutations are now strictly blocked
     receipt_late = create_order_receipt_factory(
@@ -199,119 +168,6 @@ def test_order_group_corrupted_state_denies_mutations() -> None:
     )
     with pytest.raises(CorruptedOrderGroupError, match='is corrupted'):
         group.notify_trade_change(trade_receipt)
-
-# -----------------------------------------------------------------------------
-
-def test_order_group_nominal_transition_sequences() -> None:
-    """Tracks step-by-step structural mutations across complete and bare topologies."""
-    # Sub-case A: Complete bracket sequence tracking
-    parent_order = create_order_factory(client_order_id='O-BRK')
-    sl_order = create_order_factory(client_order_id='O-BRK-SL')
-    tp_order = create_order_factory(client_order_id='O-BRK-TP')
-
-    group_full = OrderGroup(parent_id='O-BRK', orders=[parent_order, sl_order, tp_order])
-
-    # 1. Parent fulfillment triggers active market exposure mapping
-    group_full.notify_order_change(create_order_receipt_factory(
-        group_id='O-BRK', client_order_id='O-BRK', state=OrderState.FILLED
-    ))
-    assert group_full._state == OrderGroupState.ACTIVE
-    assert group_full._order_states['O-BRK'] == OrderState.FILLED
-    assert group_full._order_states['O-BRK-SL'] == OrderState.PENDING
-    assert group_full._order_states['O-BRK-TP'] == OrderState.PENDING
-
-    # 2. Child protective fill shifts lifecycle toward closing sequester
-    group_full.notify_order_change(create_order_receipt_factory(
-        group_id='O-BRK', client_order_id='O-BRK-SL', state=OrderState.FILLED
-    ))
-    assert group_full._state == OrderGroupState.CLOSING
-    assert group_full._order_states['O-BRK-SL'] == OrderState.FILLED
-
-    # Sub-case B: Bare parent execution validation
-    parent_bare = create_order_factory(client_order_id='O-BARE')
-    group_bare = OrderGroup(parent_id='O-BARE', orders=[parent_bare])
-
-    group_bare.notify_order_change(create_order_receipt_factory(
-        group_id='O-BARE', client_order_id='O-BARE', state=OrderState.FILLED
-    ))
-    assert group_bare._state == OrderGroupState.ACTIVE
-
-# -----------------------------------------------------------------------------
-
-def test_order_group_clean_cancellation_lifecycle() -> None:
-    """Verifies transition to CANCELED when parent is canceled and children are terminal."""
-    parent_order = create_order_factory(client_order_id='O-TDD')
-    child_order = create_order_factory(client_order_id='O-TDD-SL')
-
-    group = OrderGroup(parent_id='O-TDD', orders=[parent_order, child_order])
-
-    # 1. Parent cancellation pushes the aggregate into REJECTING sequester
-    group.notify_order_change(create_order_receipt_factory(
-        group_id='O-TDD', client_order_id='O-TDD', state=OrderState.CANCELED
-    ))
-    assert group._state == OrderGroupState.REJECTING
-
-    # 2. Child protection order returns CANCELED, triggering line 218 eviction
-    group.notify_order_change(create_order_receipt_factory(
-        group_id='O-TDD', client_order_id='O-TDD-SL', state=OrderState.CANCELED
-    ))
-
-    # The eviction barrier must now transition the group state to CANCELED
-    assert group._state == OrderGroupState.CANCELED
-
-# -----------------------------------------------------------------------------
-
-def test_order_group_parent_rejection_sequester_nominal() -> None:
-    """Verifies complete eviction to terminal rejected state after children cleanup."""
-    parent_order = create_order_factory(client_order_id='O-REJ')
-    sl_order = create_order_factory(client_order_id='O-REJ-SL')
-    tp_order = create_order_factory(client_order_id='O-REJ-TP')
-
-    group = OrderGroup(parent_id='O-REJ', orders=[parent_order, sl_order, tp_order])
-
-    # 1. Parent failure triggers the defensive REJECTING sequester block
-    group.notify_order_change(create_order_receipt_factory(
-        group_id='O-REJ', client_order_id='O-REJ', state=OrderState.REJECTED
-    ))
-    assert group._state == OrderGroupState.REJECTING
-    assert not group.is_terminal()
-
-    # 2. First child cancellation leaves aggregate in sequester
-    group.notify_order_change(create_order_receipt_factory(
-        group_id='O-REJ', client_order_id='O-REJ-SL', state=OrderState.CANCELED
-    ))
-    assert group._state == OrderGroupState.REJECTING
-    assert not group.is_terminal()
-
-    # 3. Final child cancellation satisfies barrier, resolving to terminal REJECTED
-    group.notify_order_change(create_order_receipt_factory(
-        group_id='O-REJ', client_order_id='O-REJ-TP', state=OrderState.CANCELED
-    ))
-    assert group._state == OrderGroupState.REJECTED
-    assert group.is_terminal()
-
-# -----------------------------------------------------------------------------
-
-def test_order_group_child_rejection_during_sequester() -> None:
-    """Verifies the behavior when a child order returns REJECTED during a sequester phase."""
-    parent_order = create_order_factory(client_order_id='O-TDD')
-    sl_order = create_order_factory(client_order_id='O-TDD-SL')
-    tp_order = create_order_factory(client_order_id='O-TDD-TP')
-
-    group = OrderGroup(parent_id='O-TDD', orders=[parent_order, sl_order, tp_order])
-
-    # 1. Parent failure pushes the aggregate into REJECTING sequester
-    group.notify_order_change(create_order_receipt_factory(
-        group_id='O-TDD', client_order_id='O-TDD', state=OrderState.REJECTED
-    ))
-    assert group._state == OrderGroupState.REJECTING
-
-    # 2. Child protective order returns REJECTED instead of CANCELED
-    group.notify_order_change(create_order_receipt_factory(
-        group_id='O-TDD', client_order_id='O-TDD-SL', state=OrderState.REJECTED
-    ))
-
-    assert group._state == OrderGroupState.REJECTING
 
 # =============================================================================
 # -----------------------------------------------------------------------------
@@ -350,200 +206,13 @@ def test_order_group_clandestine_closure_forensic_detection() -> None:
     group.notify_order_change(create_order_receipt_factory(
         group_id='O-ACC2', client_order_id='O-ACC2', state=OrderState.FILLED
     ))
-    assert group._state == OrderGroupState.ACTIVE
+    assert group.state == OrderGroupState.ACTIVE
 
     # Inflict flat trade receipt without any child protective order being filled
     with pytest.raises(CorruptedOrderGroupError):
         group.notify_trade_change(
             create_trade_receipt_factory(group_id='O-ACC2', is_open=False)
     )
-
-# -----------------------------------------------------------------------------
-
-def test_order_group_nominal_unwind_and_eviction_barrier() -> None:
-    """Validates full lifecycle resolution to completed once final criteria are met."""
-    parent_order = create_order_factory(client_order_id='O-ACC3')
-    sl_order = create_order_factory(client_order_id='O-ACC3-SL')
-    tp_order = create_order_factory(client_order_id='O-ACC3-TP')
-
-    group = OrderGroup(parent_id='O-ACC3', orders=[parent_order, sl_order, tp_order])
-
-    # 1. Establish active position footprint
-    group.notify_order_change(create_order_receipt_factory(
-        group_id='O-ACC3', client_order_id='O-ACC3', state=OrderState.FILLED
-    ))
-    group.notify_trade_change(create_trade_receipt_factory(group_id='O-ACC3', is_open=True))
-
-    # 2. Trigger nominal stop-loss execution to initiate closing sequester
-    group.notify_order_change(create_order_receipt_factory(
-        group_id='O-ACC3', client_order_id='O-ACC3-SL', state=OrderState.FILLED
-    ))
-    assert group._state == OrderGroupState.CLOSING
-
-    # 3. Clean up the opposite take-profit protection leg
-    group.notify_order_change(create_order_receipt_factory(
-        group_id='O-ACC3', client_order_id='O-ACC3-TP', state=OrderState.CANCELED
-    ))
-    assert not group.is_terminal()  # Order states are terminal, but clearing barrier remains open
-
-    # 4. Supply the flat clearing receipt to drop the final barrier
-    group.notify_trade_change(create_trade_receipt_factory(group_id='O-ACC3', is_open=False))
-
-    assert group._state == OrderGroupState.COMPLETED
-    assert group.is_terminal()
-
-# =============================================================================
-# -----------------------------------------------------------------------------
-# =============================================================================
-
-# ---[ NETWORK DESYNC
-
-# -----------------------------------------------------------------------------
-
-def test_order_group_early_clearing_race_condition() -> None:
-    """Ensures trade updates arriving before order confirmation are absorbed cleanly."""
-    parent_order = create_order_factory(client_order_id='O-DES1')
-    group = OrderGroup(parent_id='O-DES1', orders=[parent_order])
-
-    # 1. Simulate an early clearing arrival stating exposure has started
-    group.notify_trade_change(create_trade_receipt_factory(group_id='O-DES1', is_open=True))
-
-    # Verify the witness updates without corrupting the molecular lifecycle state
-    assert group._clearing_closed is False
-    assert group._state == OrderGroupState.PENDING
-
-    # 2. Supply the delayed order fulfillment confirmation receipt later
-    group.notify_order_change(create_order_receipt_factory(
-        group_id='O-DES1', client_order_id='O-DES1', state=OrderState.FILLED
-    ))
-
-    # Invariant: The aggregate must resolve successfully to the nominal ACTIVE state
-    assert group._state == OrderGroupState.ACTIVE
-
-# =============================================================================
-# -----------------------------------------------------------------------------
-# =============================================================================
-
-# ---[ ANOMALIES
-
-# -----------------------------------------------------------------------------
-
-def test_order_group_duplicate_order_receipt_corruption() -> None:
-    """Ensures duplicate order fill receipts trigger an immediate corruption lock."""
-    parent_order = create_order_factory(client_order_id='O-ANM1')
-    group = OrderGroup(parent_id='O-ANM1', orders=[parent_order])
-
-    # First legitimate fill transitions the molecular state to ACTIVE
-    group.notify_order_change(create_order_receipt_factory(
-        group_id='O-ANM1', client_order_id='O-ANM1', state=OrderState.FILLED
-    ))
-    assert group._state == OrderGroupState.ACTIVE
-
-    # Malicious or broken network duplication of the exact same fill receipt
-    with pytest.raises(CorruptedOrderGroupError):
-        group.notify_order_change(create_order_receipt_factory(
-            group_id='O-ANM1', client_order_id='O-ANM1', state=OrderState.FILLED
-        ))
-
-# -----------------------------------------------------------------------------
-
-def test_order_group_forbidden_reopening_during_sequester() -> None:
-    """Captures aggregate behavior when an exposure reopens during a closing sequester."""
-    parent_order = create_order_factory(client_order_id='O-ANM2')
-    sl_order = create_order_factory(client_order_id='O-ANM2-SL')
-    group = OrderGroup(parent_id='O-ANM2', orders=[parent_order, sl_order])
-
-    # 1. Establish and trigger standard closing sequester sequence
-    group.notify_order_change(create_order_receipt_factory(
-        group_id='O-ANM2', client_order_id='O-ANM2', state=OrderState.FILLED
-    ))
-    group.notify_order_change(create_order_receipt_factory(
-        group_id='O-ANM2', client_order_id='O-ANM2-SL', state=OrderState.FILLED
-    ))
-    assert group._state == OrderGroupState.CLOSING
-
-    # 2. Complete the clearing sequence with a flat ledger statement
-    group.notify_trade_change(create_trade_receipt_factory(group_id='O-ANM2', is_open=False))
-    assert group._clearing_closed is True
-
-    # 3. Anomaly: Supply a trade receipt reopening the position context
-    group.notify_trade_change(create_trade_receipt_factory(group_id='O-ANM2', is_open=True))
-
-    # Capture state to audit if current behavior enforces corruption flags
-    assert group._clearing_closed is False
-
-# -----------------------------------------------------------------------------
-
-def test_order_group_double_clearing_flat_on_living_aggregate() -> None:
-    """Validates that duplicate flat clearing statements are absorbed harmlessly."""
-    parent_order = create_order_factory(client_order_id='O-ANM3')
-    sl_order = create_order_factory(client_order_id='O-ANM3-SL')
-    tp_order = create_order_factory(client_order_id='O-ANM3-TP')
-    group = OrderGroup(parent_id='O-ANM3', orders=[parent_order, sl_order, tp_order])
-
-    # Move context to CLOSING sequester with orders still active in carnet
-    group.notify_order_change(create_order_receipt_factory(
-        group_id='O-ANM3', client_order_id='O-ANM3', state=OrderState.FILLED
-    ))
-    group.notify_order_change(create_order_receipt_factory(
-        group_id='O-ANM3', client_order_id='O-ANM3-SL', state=OrderState.FILLED
-    ))
-    assert group._state == OrderGroupState.CLOSING
-
-    # First flat clearing payload updates witness metrics cleanly
-    group.notify_trade_change(create_trade_receipt_factory(group_id='O-ANM3', is_open=False))
-    assert group._clearing_closed is True
-    assert group._state == OrderGroupState.CLOSING  # Living because TP is still PENDING
-
-    # Duplicate flat clearing payload hits the living entity aggregate
-    group.notify_trade_change(create_trade_receipt_factory(group_id='O-ANM3', is_open=False))
-
-    # Invariant: Must remain structural, stable, and untainted by the network noise
-    assert group._clearing_closed is True
-    assert group._state == OrderGroupState.CLOSING
-
-# =============================================================================
-# -----------------------------------------------------------------------------
-# =============================================================================
-
-# ---[ EXTREME/GHOST EXECUTION
-
-# -----------------------------------------------------------------------------
-
-def test_order_group_late_child_protective_ghost_fill() -> None:
-    """Ensures an unhandled child protective fill during rejection locks into corruption."""
-    parent_order = create_order_factory(client_order_id='O-EXT1')
-    sl_order = create_order_factory(client_order_id='O-EXT1-SL')
-    group = OrderGroup(parent_id='O-EXT1', orders=[parent_order, sl_order])
-
-    # 1. Move to REJECTING sequester block after parent entry failure
-    group.notify_order_change(create_order_receipt_factory(
-        group_id='O-EXT1', client_order_id='O-EXT1', state=OrderState.CANCELED
-    ))
-    assert group._state == OrderGroupState.REJECTING
-
-    # 2. Anomaly: Child protective order executes filled while group is clearing out
-    with pytest.raises(CorruptedOrderGroupError):
-        group.notify_order_change(create_order_receipt_factory(
-            group_id='O-EXT1', client_order_id='O-EXT1-SL', state=OrderState.FILLED
-        ))
-
-# -----------------------------------------------------------------------------
-
-def test_order_group_premature_child_ghost_fill_before_parent() -> None:
-    """Ensures premature child execution prior to parent entry triggers corruption."""
-    parent_order = create_order_factory(client_order_id='O-EXT2')
-    sl_order = create_order_factory(client_order_id='O-EXT2-SL')
-    group = OrderGroup(parent_id='O-EXT2', orders=[parent_order, sl_order])
-
-    # Invariant Birth Check
-    assert group._state == OrderGroupState.PENDING
-
-    # Anomaly: Venue ledger reports a protective child execution while parent is PENDING
-    with pytest.raises(CorruptedOrderGroupError):
-        group.notify_order_change(create_order_receipt_factory(
-            group_id='O-EXT2', client_order_id='O-EXT2-SL', state=OrderState.FILLED
-        ))
 
 # =============================================================================
 # -----------------------------------------------------------------------------
@@ -565,111 +234,88 @@ def test_order_group_retrieves_parent_order_nominally() -> None:
 
 # -----------------------------------------------------------------------------
 
-def test_order_group_is_cancelable_in_initial_pending_state() -> None:
-    """Verify that a fresh pending group with untouched clearing allows cancellation."""
-    parent_order = create_order_factory(client_order_id='ORDER_123')
-    order_group = OrderGroup(parent_id='ORDER_123', orders=[parent_order])
-
-    order_group._state = OrderGroupState.PENDING
-    order_group._clearing_closed = None
-
-    assert order_group.is_cancelable()
-    assert not order_group.is_closable()
-
-# -----------------------------------------------------------------------------
-
-def test_order_group_denies_cancellation_on_open_clearing_race_condition() -> None:
-    """Verify that cancellation is barred if clearing opens before book updates state."""
-    parent_order = create_order_factory(client_order_id='ORDER_123')
-    order_group = OrderGroup(parent_id='ORDER_123', orders=[parent_order])
-
-    order_group._state = OrderGroupState.PENDING
-    order_group._clearing_closed = False
-
-    assert not order_group.is_cancelable()
-
-# -----------------------------------------------------------------------------
-
 def test_order_group_allows_liquidation_in_nominal_active_state() -> None:
     """Verify that a nominal active group with open exposure permits market liquidation."""
     parent_order = create_order_factory(client_order_id='ORDER_123')
     order_group = OrderGroup(parent_id='ORDER_123', orders=[parent_order])
 
-    order_group._state = OrderGroupState.ACTIVE
-    order_group._clearing_closed = False
+    order_group.notify_order_change(create_order_receipt_factory(
+        client_order_id='ORDER_123', state=OrderState.FILLED,
+    ))
+
+    order_group.notify_trade_change(create_trade_receipt_factory(
+        group_id='ORDER_123', is_open=True,
+    ))
 
     assert order_group.is_closable()
     assert not order_group.is_cancelable()
 
 # -----------------------------------------------------------------------------
 
-def test_order_group_allows_liquidation_on_open_clearing_race_condition() -> None:
-    """Verify that liquidation is allowed if clearing opens before book updates state."""
-    parent_order = create_order_factory(client_order_id='ORDER_123')
-    order_group = OrderGroup(parent_id='ORDER_123', orders=[parent_order])
-
-    order_group._state = OrderGroupState.PENDING
-    order_group._clearing_closed = False
-
-    assert order_group.is_closable()
-
-# -----------------------------------------------------------------------------
-
 def test_order_group_denies_liquidation_on_closed_clearing_race_condition() -> None:
     """Verify that liquidation is barred if clearing closes before book updates state."""
-    parent_order = create_order_factory(client_order_id='ORDER_123')
-    order_group = OrderGroup(parent_id='ORDER_123', orders=[parent_order])
+    order_group = OrderGroup(
+        parent_id='ORDER_123',
+        orders=[create_order_factory(client_order_id='ORDER_123')],
+    )
 
-    order_group._state = OrderGroupState.ACTIVE
-    order_group._clearing_closed = True
+    parent_receipt = create_order_receipt_factory(
+        group_id='ORDER_123',
+        client_order_id='ORDER_123',
+        state=OrderState.FILLED,
+        executed_quantity=Decimal('10.0'),
+        average_execution_price=Decimal('100.0'),
+    )
+    order_group.notify_order_change(parent_receipt)
+
+    # Attach exit order to authorize the incoming flat trade clearing packet
+    exit_order = create_order_factory(
+        client_order_id='ORDER_123-XT',
+        side=OrderSide.SELL,
+    )
+    order_group.attach_exit_order(exit_order)
+
+    trade_receipt = create_trade_receipt_factory(
+        group_id='ORDER_123',
+        is_open=False,
+    )
+    order_group.notify_trade_change(trade_receipt)
 
     assert not order_group.is_closable()
 
 # -----------------------------------------------------------------------------
 
 def test_order_group_denies_liquidation_while_already_closing() -> None:
-    """Verify that liquidation is barred if the group is already in CLOSING state."""
-    parent_order = create_order_factory(client_order_id='ORDER_123')
-    order_group = OrderGroup(parent_id='ORDER_123', orders=[parent_order])
+    """Verify that liquidation commands are rejected if an exit order is present."""
+    order_group = OrderGroup(
+        parent_id='O1',
+        orders=[create_order_factory(client_order_id='O1')],
+    )
 
-    order_group._state = OrderGroupState.CLOSING
-    order_group._clearing_closed = False
+    parent_receipt = create_order_receipt_factory(
+        group_id='O1',
+        client_order_id='O1',
+        state=OrderState.FILLED,
+        executed_quantity=Decimal('10.0'),
+        average_execution_price=Decimal('100.0'),
+    )
+    order_group.notify_order_change(parent_receipt)
 
-    assert not order_group.is_closable()
-
-# -----------------------------------------------------------------------------
-
-def test_order_group_denies_liquidation_while_rejecting() -> None:
-    """Verify that liquidation is barred if the group is in REJECTING state."""
-    parent_order = create_order_factory(client_order_id='ORDER_123')
-    order_group = OrderGroup(parent_id='ORDER_123', orders=[parent_order])
-
-    order_group._state = OrderGroupState.REJECTING
-    order_group._clearing_closed = None
-
-    assert not order_group.is_closable()
-
-# -----------------------------------------------------------------------------
-
-def test_order_group_denies_liquidation_in_terminal_completed_state() -> None:
-    """Verify that liquidation is barred if the group is in COMPLETED state."""
-    parent_order = create_order_factory(client_order_id='ORDER_123')
-    order_group = OrderGroup(parent_id='ORDER_123', orders=[parent_order])
-
-    order_group._state = OrderGroupState.COMPLETED
-    order_group._clearing_closed = True
+    exit_order = create_order_factory(client_order_id='O1-XT')
+    order_group.attach_exit_order(exit_order)
 
     assert not order_group.is_closable()
 
 # -----------------------------------------------------------------------------
 
 def test_order_group_denies_nominal_liquidation_while_corrupted() -> None:
-    """Verify that automated nominal liquidation is barred if the group is corrupted."""
-    parent_order = create_order_factory(client_order_id='ORDER_123')
-    order_group = OrderGroup(parent_id='ORDER_123', orders=[parent_order])
+    """Verify that liquidation is flatly rejected if the group is corrupted."""
+    order_group = OrderGroup(
+        parent_id='O1',
+        orders=[create_order_factory(client_order_id='O1')],
+    )
 
-    order_group._state = OrderGroupState.CORRUPTED
-    order_group._clearing_closed = False
+    order_group._is_corrupted = True
 
     assert not order_group.is_closable()
 
@@ -677,35 +323,19 @@ def test_order_group_denies_nominal_liquidation_while_corrupted() -> None:
 
 def test_order_group_denies_cancellation_in_active_state() -> None:
     """Verify that a classical cancellation request is barred once the group is active."""
-    parent_order = create_order_factory(client_order_id='ORDER_123')
-    order_group = OrderGroup(parent_id='ORDER_123', orders=[parent_order])
+    order_group = OrderGroup(
+        parent_id='ORDER_123',
+        orders=[create_order_factory(client_order_id='ORDER_123')],
+    )
 
-    order_group._state = OrderGroupState.ACTIVE
-    order_group._clearing_closed = False
-
-    assert not order_group.is_cancelable()
-
-# -----------------------------------------------------------------------------
-
-def test_order_group_allows_liquidation_on_book_priority_asynchronism() -> None:
-    """Verify that liquidation is permitted if book reaches active state before clearing."""
-    parent_order = create_order_factory(client_order_id='ORDER_123')
-    order_group = OrderGroup(parent_id='ORDER_123', orders=[parent_order])
-
-    order_group._state = OrderGroupState.ACTIVE
-    order_group._clearing_closed = None
-
-    assert order_group.is_closable()
-
-# -----------------------------------------------------------------------------
-
-def test_order_group_denies_cancellation_if_clearing_is_already_closed() -> None:
-    """Verify that cancellation is barred if clearing signals closure while state is pending."""
-    parent_order = create_order_factory(client_order_id='ORDER_123')
-    order_group = OrderGroup(parent_id='ORDER_123', orders=[parent_order])
-
-    order_group._state = OrderGroupState.PENDING
-    order_group._clearing_closed = True
+    parent_receipt = create_order_receipt_factory(
+        group_id='ORDER_123',
+        client_order_id='ORDER_123',
+        state=OrderState.FILLED,
+        executed_quantity=Decimal('10.0'),
+        average_execution_price=Decimal('100.0'),
+    )
+    order_group.notify_order_change(parent_receipt)
 
     assert not order_group.is_cancelable()
 
@@ -713,61 +343,885 @@ def test_order_group_denies_cancellation_if_clearing_is_already_closed() -> None
 
 def test_order_group_denies_cancellation_while_already_closing() -> None:
     """Verify that cancellation is barred if the group has transitioned to CLOSING."""
-    parent_order = create_order_factory(client_order_id='ORDER_123')
-    order_group = OrderGroup(parent_id='ORDER_123', orders=[parent_order])
+    order_group = OrderGroup(
+        parent_id='ORDER_123',
+        orders=[create_order_factory(client_order_id='ORDER_123')],
+    )
 
-    order_group._state = OrderGroupState.CLOSING
-    order_group._clearing_closed = None
+    parent_receipt = create_order_receipt_factory(
+        group_id='ORDER_123',
+        client_order_id='ORDER_123',
+        state=OrderState.FILLED,
+        executed_quantity=Decimal('10.0'),
+        average_execution_price=Decimal('100.0'),
+    )
+    order_group.notify_order_change(parent_receipt)
+
+    exit_order = create_order_factory(
+        client_order_id='ORDER_123-XT',
+        side=OrderSide.SELL,
+    )
+    order_group.attach_exit_order(exit_order)
+
+    exit_receipt = create_order_receipt_factory(
+        group_id='ORDER_123',
+        client_order_id='ORDER_123-XT',
+        state=OrderState.FILLED,
+        executed_quantity=Decimal('10.0'),
+        average_execution_price=Decimal('100.0'),
+    )
+    order_group.notify_order_change(exit_receipt)
 
     assert not order_group.is_cancelable()
-
-# -----------------------------------------------------------------------------
-
-def test_order_group_denies_liquidation_in_terminal_rejected_state() -> None:
-    """Verify that market liquidation is barred if the group is dead-on-arrival."""
-    parent_order = create_order_factory(client_order_id='ORDER_123')
-    order_group = OrderGroup(parent_id='ORDER_123', orders=[parent_order])
-
-    order_group._state = OrderGroupState.REJECTED
-    order_group._clearing_closed = None
-
-    assert not order_group.is_closable()
 
 # -----------------------------------------------------------------------------
 
 def test_order_group_denies_cancellation_in_terminal_rejected_state() -> None:
     """Verify that a cancellation command is barred if the group is already rejected."""
-    parent_order = create_order_factory(client_order_id='ORDER_123')
-    order_group = OrderGroup(parent_id='ORDER_123', orders=[parent_order])
+    order_group = OrderGroup(
+        parent_id='ORDER_123',
+        orders=[create_order_factory(client_order_id='ORDER_123')],
+    )
 
-    order_group._state = OrderGroupState.REJECTED
-    order_group._clearing_closed = None
-
-    assert not order_group.is_cancelable()
-
-# -----------------------------------------------------------------------------
-
-def test_order_group_denies_cancellation_on_book_active_priority() -> None:
-    """Verify that cancellation is barred once book reaches active state regardless of clearing."""
-    parent_order = create_order_factory(client_order_id='ORDER_123')
-    order_group = OrderGroup(parent_id='ORDER_123', orders=[parent_order])
-
-    order_group._state = OrderGroupState.ACTIVE
-    order_group._clearing_closed = None
+    reject_receipt = create_order_receipt_factory(
+        group_id='ORDER_123',
+        client_order_id='ORDER_123',
+        state=OrderState.REJECTED,
+        executed_quantity=Decimal('0.0'),
+        average_execution_price=None,
+    )
+    order_group.notify_order_change(reject_receipt)
 
     assert not order_group.is_cancelable()
 
 # -----------------------------------------------------------------------------
 
-def test_order_group_denies_cancellation_while_rejecting_with_clearing_latency() -> None:
-    """Verify that cancellation is barred if the group is in REJECTING state with late clearing."""
-    parent_order = create_order_factory(client_order_id='ORDER_123')
-    order_group = OrderGroup(parent_id='ORDER_123', orders=[parent_order])
+def test_order_group_is_closable_returns_false_when_corrupted() -> None:
+    """Verify that a corrupted group state flatly blocks the closable check."""
+    order_group = OrderGroup(
+        parent_id='O1',
+        orders=[create_order_factory(client_order_id='O1')],
+    )
 
-    order_group._state = OrderGroupState.REJECTING
-    order_group._clearing_closed = None
+    # 1. Open exposure via parent fill to pass the physical balance check
+    parent_receipt = create_order_receipt_factory(
+        group_id='O1',
+        client_order_id='O1',
+        state=OrderState.FILLED,
+        executed_quantity=Decimal('10.0'),
+        average_execution_price=Decimal('100.0'),
+    )
+    order_group.notify_order_change(parent_receipt)
 
-    assert not order_group.is_cancelable()
+    # 2. Trigger the unifed safety circuit breaker
+    order_group._is_corrupted = True
+
+    # Invariant: State is CORRUPTED, which triggers the invalid state guard
+    assert order_group.state == OrderGroupState.CORRUPTED
+    assert order_group.is_closable() is False
+
+# =============================================================================
+# -----------------------------------------------------------------------------
+# =============================================================================
+
+def test_attach_exit_order_nominal():
+    """Verify clean attachment under nominal conditions."""
+    parent_order = create_order_factory(client_order_id='ORD_123')
+    group = OrderGroup(parent_id='ORD_123', orders=[parent_order])
+
+    exit_order = create_order_factory(client_order_id='ORD_123-XT')
+
+    assert group._exit_order_id is None
+
+    group.attach_exit_order(exit_order)
+    assert group._exit_order_id is exit_order.client_order_id
+
+# -----------------------------------------------------------------------------
+
+def test_attach_exit_order_duplicate_raises():
+    """Verify subsequent attachments trigger a netting error."""
+    parent_order = create_order_factory(client_order_id='ORD_123')
+    group = OrderGroup(parent_id='ORD_123', orders=[parent_order])
+
+    exit_1 = create_order_factory(client_order_id='ORD_123-XT')
+    exit_2 = create_order_factory(client_order_id='ORD_123-XT2')
+
+    group.attach_exit_order(exit_1)
+
+    assert group._orders[group._exit_order_id] is exit_1
+
+    expected_msg = 'is already registered for group "ORD_123".'
+    with pytest.raises(NettingRestrictionError, match=expected_msg):
+        group.attach_exit_order(exit_2)
+
+# -----------------------------------------------------------------------------
+
+def test_attach_exit_order_identity_conflict_raises():
+    """Verify identity collisions trigger a value error."""
+    parent_order = create_order_factory(client_order_id='ORD_123')
+    group = OrderGroup(parent_id='ORD_123', orders=[parent_order])
+
+    conflicting_exit = create_order_factory(client_order_id='ORD_123')
+
+    assert group._exit_order_id is None
+
+    expected_msg = (
+        'Order ID "ORD_123" conflicts with an '
+        'existing order in group.'
+    )
+    with pytest.raises(ValueError, match=expected_msg):
+        group.attach_exit_order(conflicting_exit)
+
+# =============================================================================
+# -----------------------------------------------------------------------------
+# =============================================================================
+
+def test_order_group_routes_parent_fill_to_ledger() -> None:
+    """Verify that a nominal parent execution fill updates the inner ledger."""
+    parent_order = create_order_factory(
+        client_order_id='ORD_PARENT',
+        side=OrderSide.BUY,
+    )
+    group = OrderGroup(parent_id='ORD_PARENT', orders=[parent_order])
+
+    assert group.ledger.position_size == Decimal('0.0')
+
+    receipt = OrderReceipt(
+        client_order_id='ORD_PARENT',
+        group_id='ORD_PARENT',
+        state='FILLED',
+        executed_quantity=Decimal('10.0'),
+        average_execution_price=Decimal('100.0'),
+        broker_order_id='B_01',
+        reject_reason=None,
+    )
+
+    group.notify_order_change(receipt)
+
+    assert group.ledger.position_size == Decimal('10.0')
+    assert group.ledger.average_price == Decimal('100.0')
+
+# -----------------------------------------------------------------------------
+
+def test_order_group_routes_exit_order_fill_to_ledger() -> None:
+    """Verify that an exit ticket fill bypasses filters and clears exposure."""
+    parent_order = create_order_factory(
+        client_order_id='ORD_PARENT',
+        side=OrderSide.BUY,
+    )
+    group = OrderGroup(parent_id='ORD_PARENT', orders=[parent_order])
+
+    # Execute parent order to satisfy legacy matrix and open exposure
+    parent_receipt = OrderReceipt(
+        client_order_id='ORD_PARENT',
+        group_id='ORD_PARENT',
+        state='FILLED',
+        executed_quantity=Decimal('10.0'),
+        average_execution_price=Decimal('100.0'),
+        broker_order_id='B_01',
+        reject_reason=None,
+    )
+    group.notify_order_change(parent_receipt)
+
+    assert group.ledger.position_size == Decimal('10.0')
+    assert group.ledger.realized_pnl == Decimal('0.0')
+
+    # Attach and execute the exit order to clear physical exposure
+    exit_order = create_order_factory(
+        client_order_id='ORD_PARENT-XT',
+        side=OrderSide.SELL,
+    )
+    group.attach_exit_order(exit_order)
+
+    exit_receipt = OrderReceipt(
+        client_order_id='ORD_PARENT-XT',
+        group_id='ORD_PARENT',
+        state='FILLED',
+        executed_quantity=Decimal('10.0'),
+        average_execution_price=Decimal('110.0'),
+        broker_order_id='B_02',
+        reject_reason=None,
+    )
+    group.notify_order_change(exit_receipt)
+
+    assert group.ledger.position_size == Decimal('0.0')
+    assert group.ledger.realized_pnl == Decimal('100.0')
+
+# -----------------------------------------------------------------------------
+
+def test_order_group_missing_price_raises_clearing_corruption() -> None:
+    """Verify that execution volume without a price triggers a fault routing."""
+    parent_order = create_order_factory(
+        client_order_id='ORD_PARENT',
+        side=OrderSide.BUY,
+    )
+    group = OrderGroup(parent_id='ORD_PARENT', orders=[parent_order])
+
+    receipt = OrderReceipt(
+        client_order_id='ORD_PARENT',
+        group_id='ORD_PARENT',
+        state='FILLED',
+        executed_quantity=Decimal('5.0'),
+        average_execution_price=None,
+        broker_order_id='B_03',
+        reject_reason=None,
+    )
+
+    expected_pattern = 'volume-weighted execution price was missing'
+    with pytest.raises(ClearingCorruptionError, match=expected_pattern):
+        group.notify_order_change(receipt)
+
+# =============================================================================
+# -----------------------------------------------------------------------------
+# =============================================================================
+
+@pytest.mark.parametrize(
+    'terminal_state',
+    [
+        OrderState.REJECTED,
+        OrderState.CANCELED,
+    ],
+)
+def test_order_group_circuit_breaker_locks_on_exit_order_failure(
+    terminal_state: OrderState,
+) -> None:
+    """Verify that an exit failure triggers a corrupted state disjunction."""
+    parent_order = create_order_factory(
+        client_order_id='ORD_PARENT',
+        side=OrderSide.BUY,
+    )
+    group = OrderGroup(parent_id='ORD_PARENT', orders=[parent_order])
+
+    # Open position at the ledger and satisfy legacy matrix initialization
+    parent_receipt = OrderReceipt(
+        client_order_id='ORD_PARENT',
+        group_id='ORD_PARENT',
+        state=OrderState.FILLED,
+        executed_quantity=Decimal('10.0'),
+        average_execution_price=Decimal('100.0'),
+        broker_order_id='B_01',
+        reject_reason=None,
+    )
+    group.notify_order_change(parent_receipt)
+
+    # Attach the exit order that will fail to execute
+    exit_order = create_order_factory(
+        client_order_id='ORD_PARENT-XT',
+        side=OrderSide.SELL,
+    )
+    group.attach_exit_order(exit_order)
+
+    exit_receipt = OrderReceipt(
+        client_order_id='ORD_PARENT-XT',
+        group_id='ORD_PARENT',
+        state=terminal_state,
+        executed_quantity=Decimal('0.0'),
+        average_execution_price=None,
+        broker_order_id='B_02',
+        reject_reason='Venue execution failure infrastructure fault',
+    )
+    group.notify_order_change(exit_receipt)
+
+    # Validate fail-fast protection and structural storage isolation
+    assert group.state == OrderGroupState.CORRUPTED
+    assert 'ORD_PARENT-XT' in group._order_states
+    assert group._order_states['ORD_PARENT-XT'] == terminal_state
+
+# =============================================================================
+# -----------------------------------------------------------------------------
+# =============================================================================
+
+def test_computed_state_prioritizes_corruption_guard() -> None:
+    """Verify that the corruption flag forces CORRUPTED regardless of data."""
+    parent_order = create_order_factory(
+        client_order_id='ORD_PARENT',
+        side=OrderSide.BUY,
+    )
+    group = OrderGroup(parent_id='ORD_PARENT', orders=[parent_order])
+
+    receipt = OrderReceipt(
+        client_order_id='ORD_PARENT',
+        group_id='ORD_PARENT',
+        state=OrderState.FILLED,
+        executed_quantity=Decimal('10.0'),
+        average_execution_price=Decimal('100.0'),
+        broker_order_id='B_01',
+        reject_reason=None,
+    )
+    group.notify_order_change(receipt)
+
+    group._is_corrupted = True
+
+    assert group.state == OrderGroupState.CORRUPTED
+
+# -----------------------------------------------------------------------------
+
+def test_computed_state_returns_pending_on_initial_setup() -> None:
+    """Verify that a flat group with a pending parent evaluates to PENDING."""
+    parent_order = create_order_factory(
+        client_order_id='ORD_PARENT',
+        side=OrderSide.BUY,
+    )
+    group = OrderGroup(parent_id='ORD_PARENT', orders=[parent_order])
+
+    receipt = OrderReceipt(
+        client_order_id='ORD_PARENT',
+        group_id='ORD_PARENT',
+        state=OrderState.PENDING,
+        executed_quantity=Decimal('0.0'),
+        average_execution_price=None,
+        broker_order_id='B_01',
+        reject_reason=None,
+    )
+    group.notify_order_change(receipt)
+
+    assert group.state == OrderGroupState.PENDING
+
+# -----------------------------------------------------------------------------
+
+def test_computed_state_returns_active_on_open_exposure() -> None:
+    """Verify that an open physical position evaluates to ACTIVE."""
+    parent_order = create_order_factory(
+        client_order_id='ORD_PARENT',
+        side=OrderSide.BUY,
+    )
+    group = OrderGroup(parent_id='ORD_PARENT', orders=[parent_order])
+
+    receipt = OrderReceipt(
+        client_order_id='ORD_PARENT',
+        group_id='ORD_PARENT',
+        state=OrderState.FILLED,
+        executed_quantity=Decimal('10.0'),
+        average_execution_price=Decimal('100.0'),
+        broker_order_id='B_01',
+        reject_reason=None,
+    )
+    group.notify_order_change(receipt)
+
+    assert group.state == OrderGroupState.ACTIVE
+
+# -----------------------------------------------------------------------------
+
+def test_computed_state_returns_closing_on_over_hedged_residual() -> None:
+    """Verify that an executed exit order with residual exposure sets CLOSING."""
+    parent_order = create_order_factory(
+        client_order_id='ORD_PARENT',
+        side=OrderSide.BUY,
+    )
+    group = OrderGroup(parent_id='ORD_PARENT', orders=[parent_order])
+
+    parent_receipt = OrderReceipt(
+        client_order_id='ORD_PARENT',
+        group_id='ORD_PARENT',
+        state=OrderState.FILLED,
+        executed_quantity=Decimal('10.0'),
+        average_execution_price=Decimal('100.0'),
+        broker_order_id='B_01',
+        reject_reason=None,
+    )
+    group.notify_order_change(parent_receipt)
+
+    exit_order = create_order_factory(
+        client_order_id='ORD_PARENT-XT',
+        side=OrderSide.SELL,
+    )
+    group.attach_exit_order(exit_order)
+
+    exit_receipt = OrderReceipt(
+        client_order_id='ORD_PARENT-XT',
+        group_id='ORD_PARENT',
+        state=OrderState.FILLED,
+        executed_quantity=Decimal('15.0'),
+        average_execution_price=Decimal('105.0'),
+        broker_order_id='B_02',
+        reject_reason=None,
+    )
+    group.notify_order_change(exit_receipt)
+
+    assert group.state == OrderGroupState.CLOSING
+
+# -----------------------------------------------------------------------------
+
+def test_computed_state_returns_closing_when_awaiting_child_purges() -> None:
+    """Verify that a flat group awaiting child cancellations evaluates to CLOSING."""
+    parent_order = create_order_factory(
+        client_order_id='ORD_PARENT',
+        side=OrderSide.BUY,
+    )
+    # Inject a child order to simulate a protection remaining in the book
+    child_order = create_order_factory(
+        client_order_id='ORD_CHILD_SL',
+        side=OrderSide.SELL,
+    )
+    group = OrderGroup(
+        parent_id='ORD_PARENT',
+        orders=[parent_order, child_order],
+    )
+
+    parent_receipt = OrderReceipt(
+        client_order_id='ORD_PARENT',
+        group_id='ORD_PARENT',
+        state=OrderState.FILLED,
+        executed_quantity=Decimal('10.0'),
+        average_execution_price=Decimal('100.0'),
+        broker_order_id='B_01',
+        reject_reason=None,
+    )
+    group.notify_order_change(parent_receipt)
+
+    exit_order = create_order_factory(
+        client_order_id='ORD_PARENT-XT',
+        side=OrderSide.SELL,
+    )
+    group.attach_exit_order(exit_order)
+
+    exit_receipt = OrderReceipt(
+        client_order_id='ORD_PARENT-XT',
+        group_id='ORD_PARENT',
+        state=OrderState.FILLED,
+        executed_quantity=Decimal('10.0'),
+        average_execution_price=Decimal('100.0'),
+        broker_order_id='B_02',
+        reject_reason=None,
+    )
+    group.notify_order_change(exit_receipt)
+
+    # Flat position but child_order is still PENDING: must evaluate to CLOSING
+    assert group.state == OrderGroupState.CLOSING
+
+# -----------------------------------------------------------------------------
+
+def test_computed_state_returns_completed_when_all_orders_terminal() -> None:
+    """Verify that a flat group with all orders terminal evaluates to COMPLETED."""
+    parent_order = create_order_factory(
+        client_order_id='ORD_PARENT',
+        side=OrderSide.BUY,
+    )
+    # Inject a child order to simulate a protection bracket setup
+    child_order = create_order_factory(
+        client_order_id='ORD_CHILD_SL',
+        side=OrderSide.SELL,
+    )
+    group = OrderGroup(
+        parent_id='ORD_PARENT',
+        orders=[parent_order, child_order],
+    )
+
+    parent_receipt = OrderReceipt(
+        client_order_id='ORD_PARENT',
+        group_id='ORD_PARENT',
+        state=OrderState.FILLED,
+        executed_quantity=Decimal('10.0'),
+        average_execution_price=Decimal('100.0'),
+        broker_order_id='B_01',
+        reject_reason=None,
+    )
+    group.notify_order_change(parent_receipt)
+
+    exit_order = create_order_factory(
+        client_order_id='ORD_PARENT-XT',
+        side=OrderSide.SELL,
+    )
+    group.attach_exit_order(exit_order)
+
+    exit_receipt = OrderReceipt(
+        client_order_id='ORD_PARENT-XT',
+        group_id='ORD_PARENT',
+        state=OrderState.FILLED,
+        executed_quantity=Decimal('10.0'),
+        average_execution_price=Decimal('100.0'),
+        broker_order_id='B_02',
+        reject_reason=None,
+    )
+    group.notify_order_change(exit_receipt)
+
+    # Simulate broker confirming the cancellation of the protection order
+    child_receipt = OrderReceipt(
+        client_order_id='ORD_CHILD_SL',
+        group_id='ORD_PARENT',
+        state=OrderState.CANCELED,
+        executed_quantity=Decimal('0.0'),
+        average_execution_price=None,
+        broker_order_id='B_03',
+        reject_reason=None,
+    )
+    group.notify_order_change(child_receipt)
+
+    assert group.state == OrderGroupState.COMPLETED
+
+# -----------------------------------------------------------------------------
+
+def test_computed_state_returns_rejected_on_parent_failure() -> None:
+    """Verify that a rejected parent entry order evaluates to REJECTED."""
+    parent_order = create_order_factory(
+        client_order_id='ORD_PARENT',
+        side=OrderSide.BUY,
+    )
+    group = OrderGroup(parent_id='ORD_PARENT', orders=[parent_order])
+
+    receipt = OrderReceipt(
+        client_order_id='ORD_PARENT',
+        group_id='ORD_PARENT',
+        state=OrderState.REJECTED,
+        executed_quantity=Decimal('0.0'),
+        average_execution_price=None,
+        broker_order_id='B_01',
+        reject_reason='Margin insufficiency fault',
+    )
+    group.notify_order_change(receipt)
+
+    assert group.state == OrderGroupState.REJECTED
+
+# -----------------------------------------------------------------------------
+
+def test_computed_state_returns_canceled_on_parent_abort() -> None:
+    """Verify that a canceled parent entry order evaluates to CANCELED."""
+    parent_order = create_order_factory(
+        client_order_id='ORD_PARENT',
+        side=OrderSide.BUY,
+    )
+    group = OrderGroup(parent_id='ORD_PARENT', orders=[parent_order])
+
+    receipt = OrderReceipt(
+        client_order_id='ORD_PARENT',
+        group_id='ORD_PARENT',
+        state=OrderState.CANCELED,
+        executed_quantity=Decimal('0.0'),
+        average_execution_price=None,
+        broker_order_id='B_01',
+        reject_reason=None,
+    )
+    group.notify_order_change(receipt)
+
+    assert group.state == OrderGroupState.CANCELED
+
+# -----------------------------------------------------------------------------
+
+def test_computed_state_returns_closing_on_nominal_protection_fill() -> None:
+    """Verify that a filled protection order with pending sibling sets CLOSING."""
+    parent_order = create_order_factory(
+        client_order_id='ORD_PARENT',
+        side=OrderSide.BUY,
+    )
+    child_sl = create_order_factory(
+        client_order_id='ORD_CHILD_SL',
+        side=OrderSide.SELL,
+    )
+    child_tp = create_order_factory(
+        client_order_id='ORD_CHILD_TP',
+        side=OrderSide.SELL,
+    )
+    group = OrderGroup(
+        parent_id='ORD_PARENT',
+        orders=[parent_order, child_sl, child_tp],
+    )
+
+    parent_receipt = OrderReceipt(
+        client_order_id='ORD_PARENT',
+        group_id='ORD_PARENT',
+        state=OrderState.FILLED,
+        executed_quantity=Decimal('10.0'),
+        average_execution_price=Decimal('100.0'),
+        broker_order_id='B_01',
+        reject_reason=None,
+    )
+    group.notify_order_change(parent_receipt)
+
+    # Enforce the market hit on the Stop-Loss order to flatten exposure
+    sl_receipt = OrderReceipt(
+        client_order_id='ORD_CHILD_SL',
+        group_id='ORD_PARENT',
+        state=OrderState.FILLED,
+        executed_quantity=Decimal('10.0'),
+        average_execution_price=Decimal('95.0'),
+        broker_order_id='B_02',
+        reject_reason=None,
+    )
+    group.notify_order_change(sl_receipt)
+
+    # Flat ledger but pending Take-Profit sibling must trigger CLOSING state
+    assert group.state == OrderGroupState.CLOSING
+
+# =============================================================================
+# -----------------------------------------------------------------------------
+# =============================================================================
+
+def test_order_group_filters_late_out_of_order_pending_packet() -> None:
+    """Verify that a late pending receipt does not overwrite a terminal fill."""
+    order_group = OrderGroup(
+        parent_id='O1',
+        orders=[create_order_factory(client_order_id='O1')],
+    )
+
+    # Initial ledger position must be flat before any execution
+    assert order_group.ledger.position_size == Decimal('0.0')
+
+    fill_receipt = create_order_receipt_factory(
+        group_id='O1',
+        client_order_id='O1',
+        state=OrderState.FILLED,
+        executed_quantity=Decimal('10.0'),
+        average_execution_price=Decimal('100.0'),
+    )
+    order_group.notify_order_change(fill_receipt)
+
+    # Ledger must register the open position following nominal execution
+    assert order_group.ledger.position_size == Decimal('10.0')
+
+    # Simulate network race condition: late pending packet arrives afterwards
+    late_pending_receipt = create_order_receipt_factory(
+        group_id='O1',
+        client_order_id='O1',
+        state=OrderState.PENDING,
+        executed_quantity=Decimal('0.0'),
+    )
+    order_group.notify_order_change(late_pending_receipt)
+
+    # Invariant: Late packet is dropped, ledger position remains strictly unchanged
+    assert order_group._order_states['O1'] == OrderState.FILLED
+    assert order_group.ledger.position_size == Decimal('10.0')
+
+# -----------------------------------------------------------------------------
+
+def test_order_group_absorbs_duplicate_network_packets_silently() -> None:
+    """Verify that duplicate filled receipts do not trigger double ledger updates."""
+    order_group = OrderGroup(
+        parent_id='O1',
+        orders=[create_order_factory(client_order_id='O1')],
+    )
+
+    # Initial ledger position must be flat before network noise
+    assert order_group.ledger.position_size == Decimal('0.0')
+
+    fill_receipt = create_order_receipt_factory(
+        group_id='O1',
+        client_order_id='O1',
+        state=OrderState.FILLED,
+        executed_quantity=Decimal('10.0'),
+        average_execution_price=Decimal('100.0'),
+    )
+
+    # First packet ingestion moves ledger to open state
+    order_group.notify_order_change(fill_receipt)
+    assert order_group.ledger.position_size == Decimal('10.0')
+
+    # Second packet ingestion simulates network duplication noise
+    order_group.notify_order_change(fill_receipt)
+
+    # Invariant: Duplicate is filtered, protecting ledger from double volume entry
+    assert order_group._order_states['O1'] == OrderState.FILLED
+    assert order_group.ledger.position_size == Decimal('10.0')
+
+# =============================================================================
+# -----------------------------------------------------------------------------
+# =============================================================================
+
+def test_order_group_over_hedged_returns_false_in_nominal_bracket_cruise() -> None:
+    """Verify that bidirectional bracket protections clear the check."""
+    parent_order = create_order_factory(client_order_id='O1')
+    sl_order = create_order_factory(
+        client_order_id='O1-SL',
+        side=OrderSide.SELL,
+        quantity=Decimal('10.0'),
+    )
+    tp_order = create_order_factory(
+        client_order_id='O1-TP',
+        side=OrderSide.SELL,
+        quantity=Decimal('10.0'),
+    )
+
+    order_group = OrderGroup(
+        parent_id='O1',
+        orders=[parent_order, sl_order, tp_order],
+    )
+
+    # Open physical market position via parent fill receipt
+    parent_receipt = create_order_receipt_factory(
+        group_id='O1',
+        client_order_id='O1',
+        state=OrderState.FILLED,
+        executed_quantity=Decimal('10.0'),
+        average_execution_price=Decimal('100.0'),
+    )
+    order_group.notify_order_change(parent_receipt)
+
+    # Invariants verification: ledger is open, bracket orders are working
+    assert order_group.ledger.position_size == Decimal('10.0')
+    assert order_group._order_states['O1-SL'] == OrderState.PENDING
+    assert order_group._order_states['O1-TP'] == OrderState.PENDING
+
+    # Call the diagnostic function: aggregate volume >= position
+    assert order_group.is_over_hedged() is False
+
+# -----------------------------------------------------------------------------
+
+def test_order_group_over_hedged_intercepts_insufficient_protection() -> None:
+    """Verify that an orphan position triggers the over-hedged condition."""
+    parent_order = create_order_factory(
+        client_order_id='O1',
+        quantity=Decimal('10.0'),
+    )
+    sl_order = create_order_factory(
+        client_order_id='O1-SL',
+        side=OrderSide.SELL,
+        quantity=Decimal('10.0'),
+    )
+    tp_order = create_order_factory(
+        client_order_id='O1-TP',
+        side=OrderSide.SELL,
+        quantity=Decimal('10.0'),
+    )
+
+    order_group = OrderGroup(
+        parent_id='O1',
+        orders=[parent_order, sl_order, tp_order],
+    )
+
+    # Open physical position
+    parent_receipt = create_order_receipt_factory(
+        group_id='O1',
+        client_order_id='O1',
+        state=OrderState.FILLED,
+        executed_quantity=Decimal('10.0'),
+        average_execution_price=Decimal('100.0'),
+    )
+    order_group.notify_order_change(parent_receipt)
+
+    # Simulate market rupture: Take-Profit is canceled by the venue
+    tp_receipt = create_order_receipt_factory(
+        group_id='O1',
+        client_order_id='O1-TP',
+        state=OrderState.CANCELED,
+        executed_quantity=Decimal('0.0'),
+    )
+    order_group.notify_order_change(tp_receipt)
+
+    # Invariants verification: ledger is open (+10.0) but only SL remains
+    assert order_group.ledger.position_size == Decimal('10.0')
+    assert order_group._order_states['O1-SL'] == OrderState.PENDING
+    assert order_group._order_states['O1-TP'] == OrderState.CANCELED
+
+    # Protection volume drops from 20.0 to 10.0. Still equal to position (10.0)
+    assert order_group.is_over_hedged() is False
+
+    # Simulate critical rupture: Stop-Loss is now canceled as well
+    sl_receipt = create_order_receipt_factory(
+        group_id='O1',
+        client_order_id='O1-SL',
+        state=OrderState.CANCELED,
+    )
+    order_group.notify_order_change(sl_receipt)
+
+    # Every closing contract is dead, net exposure (+10.0) is completely orphan
+    assert order_group._order_states['O1-SL'] == OrderState.CANCELED
+    assert order_group.is_over_hedged() is True
+
+# -----------------------------------------------------------------------------
+
+def test_order_group_over_hedged_ignores_same_side_pending_orders() -> None:
+    """Verify that same-side working orders do not clear over-hedging."""
+    parent_order = create_order_factory(client_order_id='O1')
+    accumulation_order = create_order_factory(
+        client_order_id='O1-BUY2',
+        side=OrderSide.BUY,
+        quantity=Decimal('10.0'),
+    )
+
+    order_group = OrderGroup(
+        parent_id='O1',
+        orders=[parent_order, accumulation_order],
+    )
+
+    # Open physical long position via parent fill
+    parent_receipt = create_order_receipt_factory(
+        group_id='O1',
+        client_order_id='O1',
+        state=OrderState.FILLED,
+        executed_quantity=Decimal('10.0'),
+        average_execution_price=Decimal('100.0'),
+    )
+    order_group.notify_order_change(parent_receipt)
+
+    # Invariants verification: ledger is long (+10.0), second BUY is working
+    assert order_group.ledger.position_size == Decimal('10.0')
+    assert order_group._order_states['O1-BUY2'] == OrderState.PENDING
+
+    # Diagnostic check: the pending BUY must be ignored, returning True
+    assert order_group.is_over_hedged() is True
+
+# -----------------------------------------------------------------------------
+
+def test_order_group_is_over_hedged_returns_false_on_flat_exposure() -> None:
+    """Verify that a flat physical ledger position returns False immediately."""
+    parent_order = create_order_factory(client_order_id='O1')
+    sl_order = create_order_factory(
+        client_order_id='O1-SL',
+        side=OrderSide.SELL,
+        quantity=Decimal('10.0'),
+    )
+
+    order_group = OrderGroup(
+        parent_id='O1',
+        orders=[parent_order, sl_order],
+    )
+
+    # Invariants verification: ledger position is strictly flat at startup
+    assert order_group.ledger.position_size == Decimal('0.0')
+
+    # Call the diagnostic function to trigger the early flat return guard
+    assert order_group.is_over_hedged() is False
+
+# -----------------------------------------------------------------------------
+
+def test_order_group_over_hedged_intercepts_short_to_long_flip() -> None:
+    """Verify that a slippage inversion triggers the over-hedged check."""
+    parent_order = create_order_factory(
+        client_order_id='O1',
+        side=OrderSide.SELL,
+        quantity=Decimal('10.0'),
+    )
+    sl_order = create_order_factory(
+        client_order_id='O1-SL',
+        side=OrderSide.BUY,
+        quantity=Decimal('10.0'),
+    )
+
+    order_group = OrderGroup(
+        parent_id='O1',
+        orders=[parent_order, sl_order],
+    )
+
+    # Establish initial physical short exposure via parent fill
+    parent_receipt = create_order_receipt_factory(
+        group_id='O1',
+        client_order_id='O1',
+        state=OrderState.FILLED,
+        executed_quantity=Decimal('10.0'),
+        average_execution_price=Decimal('100.0'),
+    )
+    order_group.notify_order_change(parent_receipt)
+
+    # Invariants verification: ledger is short and protected by the BUY order
+    assert order_group.ledger.position_size == Decimal('-10.0')
+    assert order_group._order_states['O1-SL'] == OrderState.PENDING
+    assert order_group.is_over_hedged() is False
+
+    # Simulate violent slippage: BUY order executes for 11.0 lots instead of 10
+    sl_receipt = create_order_receipt_factory(
+        group_id='O1',
+        client_order_id='O1-SL',
+        state=OrderState.FILLED,
+        executed_quantity=Decimal('11.0'),
+        average_execution_price=Decimal('105.0'),
+    )
+    order_group.notify_order_change(sl_receipt)
+
+    # Ledger flips to an unmanaged long position (+1.0) while book is empty
+    assert order_group.ledger.position_size == Decimal('1.0')
+    assert order_group._order_states['O1-SL'] == OrderState.FILLED
+
+    # Diagnostic function must catch the orphan long lot and return True
+    assert order_group.is_over_hedged() is True
 
 # =============================================================================
 # -----------------------------------------------------------------------------

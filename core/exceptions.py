@@ -29,6 +29,11 @@ class BrokerPositionNotFoundError(AegisError):
 
 # -----------------------------------------------------------------------------
 
+class ClearingCorruptionError(AegisError):
+    """Infrastructure execution receipt lacking vital pricing data."""
+
+# -----------------------------------------------------------------------------
+
 class ContractNotFoundError(AegisError):
     """Financial contract is missing from the registry mapping."""
 

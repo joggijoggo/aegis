@@ -3,13 +3,19 @@
 Maintains structural integrity and execution alignment for contingent trading lifecycles.
 """
 
+from decimal import Decimal
+
+from core.clearing_ledger import ClearingLedger
 from core.exceptions import (
+    ClearingCorruptionError,
     CorruptedOrderGroupError,
+    NettingRestrictionError,
     UntrackedOrderException,
 )
 from core.models import (
     Order,
     OrderGroupState,
+    OrderSide,
     OrderState,
     OrderReceipt,
     TradeReceipt,
@@ -22,154 +28,14 @@ from core.models import (
 class OrderGroup:
     """Operational entity enforcing structural alignment over contingent orders."""
 
-    # Defines the absolute Child Transition Matrix:
-    #
-    #   CurrentOrderGroupState x IncomingOrderState -> TargetOrderGroupState
-    #
-    _CHILD_MATRIX = {
-        OrderGroupState.PENDING: {
-            # Nominal state where protection orders sit waiting in the book
-            OrderState.PENDING: OrderGroupState.PENDING,
-            # Rupture: protection fills before parent entry executed; upside down
-            OrderState.FILLED: OrderGroupState.CORRUPTED,
-            # Severe rupture: protection cancelled before parent entry is executed
-            OrderState.CANCELED: OrderGroupState.CORRUPTED,
-            # Severe rupture: protection rejected before parent entry is executed
-            OrderState.REJECTED: OrderGroupState.CORRUPTED,
-        },
-        OrderGroupState.ACTIVE: {
-            # Nominal invariant where active protections monitor exposure
-            OrderState.PENDING: OrderGroupState.ACTIVE,
-            # Nominal protection hit; position unwinding initiated under closing
-            OrderState.FILLED: OrderGroupState.CLOSING,
-            # Severe rupture: live protection cancelled; exposure left naked
-            OrderState.CANCELED: OrderGroupState.CORRUPTED,
-            # Severe rupture: live protection rejected by broker; exposure naked
-            OrderState.REJECTED: OrderGroupState.CORRUPTED,
-        },
-        OrderGroupState.CLOSING: {
-            # Severe rupture: brother protection remains pending during closing
-            OrderState.PENDING: OrderGroupState.CORRUPTED,
-            # Severe rupture: brother protection fills during closing; double execution
-            OrderState.FILLED: OrderGroupState.CORRUPTED,
-            # Nominal sequence: brother protection cancelled successfully post unwind
-            OrderState.CANCELED: OrderGroupState.CLOSING,
-            # Severe rupture: broker rejects the protection cancellation during closing
-            OrderState.REJECTED: OrderGroupState.CORRUPTED,
-        },
-        OrderGroupState.REJECTING: {
-            # Severe rupture: child signals a pending state after parent failure
-            OrderState.PENDING: OrderGroupState.CORRUPTED,
-            # Severe rupture: child protection fills while parent entry failed
-            OrderState.FILLED: OrderGroupState.CORRUPTED,
-            # Nominal sequence: child cancelled following the parent failure
-            OrderState.CANCELED: OrderGroupState.REJECTING,
-            # The broker might already have canceled the child order.
-            OrderState.REJECTED: OrderGroupState.REJECTING,
-        },
-        OrderGroupState.CANCELED: {
-            # Deadlock state: cancelled groups reject late infrastructure packets
-            OrderState.PENDING: OrderGroupState.CORRUPTED,
-            OrderState.FILLED: OrderGroupState.CORRUPTED,
-            OrderState.CANCELED: OrderGroupState.CORRUPTED,
-            OrderState.REJECTED: OrderGroupState.CORRUPTED,
-        },
-        OrderGroupState.COMPLETED: {
-            # Deadlock state: completed groups reject late infrastructure packets
-            OrderState.PENDING: OrderGroupState.CORRUPTED,
-            OrderState.FILLED: OrderGroupState.CORRUPTED,
-            OrderState.CANCELED: OrderGroupState.CORRUPTED,
-            OrderState.REJECTED: OrderGroupState.CORRUPTED,
-        },
-        OrderGroupState.REJECTED: {
-            # Deadlock state: rejected groups reject late infrastructure packets
-            OrderState.PENDING: OrderGroupState.CORRUPTED,
-            OrderState.FILLED: OrderGroupState.CORRUPTED,
-            OrderState.CANCELED: OrderGroupState.CORRUPTED,
-            OrderState.REJECTED: OrderGroupState.CORRUPTED,
-        },
-        OrderGroupState.CORRUPTED: {
-            # Deadlock state: once corrupted, the group blocks all modifications
-            OrderState.PENDING: OrderGroupState.CORRUPTED,
-            OrderState.FILLED: OrderGroupState.CORRUPTED,
-            OrderState.CANCELED: OrderGroupState.CORRUPTED,
-            OrderState.REJECTED: OrderGroupState.CORRUPTED,
-        },
-    }
-
-    # Defines the absolute Parent Transition Matrix:
-    #
-    #   CurrentOrderGroupState x IncomingOrderState -> TargetOrderGroupState
-    #
-    _PARENT_MATRIX = {
-        OrderGroupState.PENDING: {
-            # Nominal state where the parent entrance order sits in the venue book
-            OrderState.PENDING: OrderGroupState.PENDING,
-            # Nominal entrance execution opening the trade exposure
-            OrderState.FILLED: OrderGroupState.ACTIVE,
-            # Parent order cancelled before matching; aborting the cycle cleanly
-            OrderState.CANCELED: OrderGroupState.REJECTING,
-            # Parent order rejected due to margin or venue rules; aborting cycle
-            OrderState.REJECTED: OrderGroupState.REJECTING,
-        },
-        OrderGroupState.ACTIVE: {
-            # Severe rupture: parent order goes back to pending while group is active
-            OrderState.PENDING: OrderGroupState.CORRUPTED,
-            # Severe rupture: duplicate entry execution received for an active trade
-            OrderState.FILLED: OrderGroupState.CORRUPTED,
-            # Severe rupture: parent order cancelled post matching; data mismatch
-            OrderState.CANCELED: OrderGroupState.CORRUPTED,
-            # Severe rupture: parent order rejected post matching; data mismatch
-            OrderState.REJECTED: OrderGroupState.CORRUPTED,
-        },
-        OrderGroupState.CLOSING: {
-            # Severe rupture: parent order goes back to pending while trade is closing
-            OrderState.PENDING: OrderGroupState.CORRUPTED,
-            # Severe rupture: duplicate entry fill received during unwinding phase
-            OrderState.FILLED: OrderGroupState.CORRUPTED,
-            # Severe rupture: parent order cancelled during unwinding phase
-            OrderState.CANCELED: OrderGroupState.CORRUPTED,
-            # Severe rupture: parent order rejected during unwinding phase
-            OrderState.REJECTED: OrderGroupState.CORRUPTED,
-        },
-        OrderGroupState.REJECTING: {
-            # Severe rupture: failed parent signals an impossible pending state late
-            OrderState.PENDING: OrderGroupState.CORRUPTED,
-            # Severe rupture: parent fills late while children are being purged
-            OrderState.FILLED: OrderGroupState.CORRUPTED,
-            # Severe rupture: redundant cancel received for an already failing parent
-            OrderState.CANCELED: OrderGroupState.CORRUPTED,
-            # Severe rupture: redundant reject received for an already failing parent
-            OrderState.REJECTED: OrderGroupState.CORRUPTED,
-        },
-        OrderGroupState.CANCELED: {
-            # Deadlock state: cancelled groups reject late infrastructure packets
-            OrderState.PENDING: OrderGroupState.CORRUPTED,
-            OrderState.FILLED: OrderGroupState.CORRUPTED,
-            OrderState.CANCELED: OrderGroupState.CORRUPTED,
-            OrderState.REJECTED: OrderGroupState.CORRUPTED,
-        },
-        OrderGroupState.COMPLETED: {
-            # Deadlock state: completed groups reject late infrastructure packets
-            OrderState.PENDING: OrderGroupState.CORRUPTED,
-            OrderState.FILLED: OrderGroupState.CORRUPTED,
-            OrderState.CANCELED: OrderGroupState.CORRUPTED,
-            OrderState.REJECTED: OrderGroupState.CORRUPTED,
-        },
-        OrderGroupState.REJECTED: {
-            # Deadlock state: rejected groups reject late infrastructure packets
-            OrderState.PENDING: OrderGroupState.CORRUPTED,
-            OrderState.FILLED: OrderGroupState.CORRUPTED,
-            OrderState.CANCELED: OrderGroupState.CORRUPTED,
-            OrderState.REJECTED: OrderGroupState.CORRUPTED,
-        },
-        OrderGroupState.CORRUPTED: {
-            # Deadlock state: once corrupted, the group blocks all modifications
-            OrderState.PENDING: OrderGroupState.CORRUPTED,
-            OrderState.FILLED: OrderGroupState.CORRUPTED,
-            OrderState.CANCELED: OrderGroupState.CORRUPTED,
-            OrderState.REJECTED: OrderGroupState.CORRUPTED,
-        },
+    # Anticipative state weight mapping to filter network packet ordering faults
+    _STATE_WEIGHTS: dict[OrderState, int] = {
+        OrderState.PENDING: 0,
+        # TODO: Add OrderState.PARTIALLY_FILLED: 1, once incremental fills are integrated
+        OrderState.FILLED: 2,
+        OrderState.CANCELED: 2,
+        # TODO: Add OrderState.EXPIRED: 2, once time-in-force are integrated.
+        OrderState.REJECTED: 2,
     }
 
     # Guardrails targeting unhandled microstructural infrastructure states
@@ -185,7 +51,11 @@ class OrderGroup:
             orders: Collection of all contingent orders belonging to this transaction.
         """
         self._parent_id: str = parent_id
+        self._exit_order_id: str | None = None
+
         self._clearing_closed: bool | None = None
+        self._ledger = ClearingLedger()
+        self._is_corrupted: bool = False
 
         self._orders: dict[str, Order] = {}
         self._order_states: dict[str, OrderState] = {}
@@ -200,40 +70,34 @@ class OrderGroup:
                 f'is missing from the provided orders collection.'
             )
 
-        self._state: OrderGroupState = OrderGroupState.PENDING
-
 # -----------------------------------------------------------------------------
 
-    def _evaluate_eviction_barrier(self) -> None:
-        """Evaluates microstructural and accounting conditions to finalize the lifecycle."""
-        # Handle automated triggers for complete opening failures
-        if self._state == OrderGroupState.REJECTING:
-            all_children_terminal = True
+    def attach_exit_order(self, exit_order: Order) -> None:
+        """Binds the liquidation order instance to the group execution context.
 
-            for order_id, order_state in self._order_states.items():
-                if order_id != self._parent_id and not order_state.is_terminal:
-                    all_children_terminal = False
-                    break
+        Args:
+            exit_order: The order instance used to close the position.
 
-            if all_children_terminal:
-                parent_state = self._order_states.get(self._parent_id)
+        Raises:
+            NettingRestrictionError: When an exit order is already attached.
+            ValueError: When the exit order ID conflicts with an existing order.
+        """
+        if self._exit_order_id is not None:
+            raise NettingRestrictionError(
+                f'An exit order ({self._exit_order_id} is already registered '
+                f'for group "{self._parent_id}".'
+            )
 
-                if parent_state == OrderState.CANCELED:
-                    self._state = OrderGroupState.CANCELED
-                elif parent_state == OrderState.REJECTED:
-                    self._state = OrderGroupState.REJECTED
+        # Double checks.
+        if exit_order.client_order_id in self._orders:
+            raise ValueError(
+                f'Order ID "{exit_order.client_order_id}" conflicts '
+                f'with an existing order in group.'
+            )
 
-        # Handle automated triggers for nominal closing sequences
-        if self._state == OrderGroupState.CLOSING and self._clearing_closed:
-            all_orders_terminal = True
-
-            for order_state in self._order_states.values():
-                if not order_state.is_terminal:
-                    all_orders_terminal = False
-                    break
-
-            if all_orders_terminal:
-                self._state = OrderGroupState.COMPLETED
+        self._exit_order_id = exit_order.client_order_id
+        self._orders[exit_order.client_order_id] = exit_order
+        self._order_states[exit_order.client_order_id] = OrderState.PENDING
 
 # -----------------------------------------------------------------------------
 
@@ -253,7 +117,7 @@ class OrderGroup:
         Returns:
             True if the group is cancelable, False otherwise.
         """
-        return self._state == OrderGroupState.PENDING and self._clearing_closed is None
+        return self.state == OrderGroupState.PENDING
 
 # -----------------------------------------------------------------------------
 
@@ -263,8 +127,16 @@ class OrderGroup:
         Returns:
             True if the group is closable, False otherwise.
         """
+        # Hard intention lock preventing concurrent double-liquidation
+        if self._exit_order_id is not None:
+            return False
+
+        # Physical volume lock protecting against flat exposure clearance
+        if self._ledger.position_size == Decimal('0.0'):
+            return False
+
         # Exclude states that are already closing, aborting, dead, or corrupted.
-        if self._state not in (OrderGroupState.PENDING, OrderGroupState.ACTIVE):
+        if self.state not in (OrderGroupState.PENDING, OrderGroupState.ACTIVE):
             return False
 
         # Prevent double-liquidation if the clearing closed the position ahead of the book.
@@ -272,7 +144,7 @@ class OrderGroup:
             return False
 
         # Nominal active path: book confirms matching and clearing has not signaled closure.
-        if self._state == OrderGroupState.ACTIVE:
+        if self.state == OrderGroupState.ACTIVE:
             return True
 
         # Race condition path: clearing opens exposure while parent book status is delayed.
@@ -280,9 +152,46 @@ class OrderGroup:
 
 # -----------------------------------------------------------------------------
 
+    def is_over_hedged(self) -> bool:
+        """Evaluates whether the group suffers from unmanaged market exposure.
+
+        Returns:
+            True if exposure is active but matching closing volume is insufficient,
+            False otherwise.
+        """
+        position = self._ledger.position_size
+
+        if position == Decimal('0.0'):
+            return False
+
+        required_side = OrderSide.SELL if position > Decimal('0.0') else OrderSide.BUY
+        pending_volume = Decimal('0.0')
+
+        # Aggregate working volumes facing exposure with a single filtered condition
+        for order_id, order_state in self._order_states.items():
+            if (
+                order_id != self._parent_id
+                and order_state == OrderState.PENDING
+                and self._orders[order_id].side == required_side
+            ):
+                pending_volume += self._orders[order_id].quantity
+
+        # Strict inequality allows bidirectional bracket orders (SL and TP) to
+        # coexist at PENDING state during nominal cruise phase without triggering.
+        return pending_volume < abs(position)
+
+# -----------------------------------------------------------------------------
+
     def is_terminal(self) -> bool:
         """Determines if the group execution cycle is completely dead or closed."""
-        return self._state.is_terminal
+        return self.state.is_terminal
+
+# -----------------------------------------------------------------------------
+
+    @property
+    def ledger(self) -> ClearingLedger:
+        """Retrieves the clearing ledger tracking physical volume balances."""
+        return self._ledger
 
 # -----------------------------------------------------------------------------
 
@@ -293,16 +202,17 @@ class OrderGroup:
             order_receipt: The incoming broker order execution receipt payload.
 
         Raises:
+            ClearingCorruptionError: when an execution fill lacks pricing data.
             CorruptedOrderGroupError: when the order group state is corrupted.
             UntrackedOrderException: when the receipt order id does not belong to the group.
         """
-        if self._state == OrderGroupState.CORRUPTED:
+        if self._is_corrupted:
             raise CorruptedOrderGroupError(
                 f'Action denied: order group "{self._parent_id}" is corrupted.'
             )
 
         if order_receipt.state in self._UNSUPPORTED_STATES:
-            self._state = OrderGroupState.CORRUPTED
+            self._is_corrupted = True
             raise NotImplementedError(
                 f"Order state {order_receipt.state} is not supported in the current framework."
             )
@@ -313,22 +223,37 @@ class OrderGroup:
                 f'in group "{self._parent_id}".'
             )
 
+        current_state = self._order_states[order_receipt.client_order_id]
+        incoming_weight = self._STATE_WEIGHTS[order_receipt.state]
+        current_weight = self._STATE_WEIGHTS[current_state]
+
+        # Silently drop network duplicates or late out-of-order packets
+        if incoming_weight <= current_weight:
+            # TODO: log or warn.
+            return
+
         self._order_states[order_receipt.client_order_id] = order_receipt.state
 
-        is_parent = order_receipt.client_order_id == self._parent_id
-        target_matrix = self._PARENT_MATRIX if is_parent else self._CHILD_MATRIX
+        if order_receipt.executed_quantity > 0:
+            if order_receipt.average_execution_price is None:
+                raise ClearingCorruptionError(
+                    f'order "{order_receipt.client_order_id}" reported an '
+                    f'execution volume of {order_receipt.executed_quantity} '
+                    f'but the volume-weighted execution price was missing (None).'
+                )
 
-        prev_state = self._state
-        self._state = target_matrix[self._state][order_receipt.state]
-
-        if self._state == OrderGroupState.CORRUPTED:
-            raise CorruptedOrderGroupError(
-                f'Group "{self._parent_id}" went from "{prev_state}" '
-                f'to "{self._state}" on order {order_receipt.client_order_id} '
-                f'entering state "{order_receipt.state}".'
+            order = self._orders[order_receipt.client_order_id]
+            self._ledger.update_exposure(
+                side=order.side,
+                quantity=order_receipt.executed_quantity,
+                price=order_receipt.average_execution_price,
             )
 
-        self._evaluate_eviction_barrier()
+        if (
+            order_receipt.client_order_id == self._exit_order_id
+            and order_receipt.state in (OrderState.CANCELED, OrderState.REJECTED)
+        ):
+            self._is_corrupted = True
 
 # -----------------------------------------------------------------------------
 
@@ -341,37 +266,88 @@ class OrderGroup:
         Raises:
             CorruptedOrderGroupError: when the order group state is corrupted.
         """
-        if self._state == OrderGroupState.CORRUPTED:
+        if self._is_corrupted:
             raise CorruptedOrderGroupError(
                 f'Action denied: order group "{self._parent_id}" is corrupted.'
             )
-
-        prev_state = self._state
 
         if trade_receipt.is_open:
             self._clearing_closed = False
         else:
             self._clearing_closed = True
 
-            # Verify if any contingent protection order has triggered the unwind
-            any_child_filled = False
-            for order_id, order_state in self._order_states.items():
-                if order_id != self._parent_id and order_state == OrderState.FILLED:
-                    any_child_filled = True
-                    break
-
-            # Handle clandestine external closure vs authorized nominal sequence
-            if not any_child_filled and self._state == OrderGroupState.ACTIVE:
-                self._state = OrderGroupState.CORRUPTED
-            elif self._state == OrderGroupState.CLOSING or any_child_filled:
-                self._evaluate_eviction_barrier()
-
-        if self._state == OrderGroupState.CORRUPTED:
-            raise CorruptedOrderGroupError(
-                f'Group "{self._parent_id}" went from {prev_state} '
-                f'to {self._state} during trade clearing evaluation. '
-                f'Trade Open flag: {trade_receipt.is_open}.'
+            any_child_filled = any(
+                order_state == OrderState.FILLED
+                for order_id, order_state in self._order_states.items()
+                if order_id not in (self._parent_id, self._exit_order_id)
             )
+
+            # Exclude authorized exit liquidations from clandestine closure guards
+            if (
+                not any_child_filled
+                and self._exit_order_id is None
+                and self.state == OrderGroupState.ACTIVE
+            ):
+                self._is_corrupted = True
+
+        if self._is_corrupted:
+            raise CorruptedOrderGroupError(
+                f'Group "{self._parent_id}" entered corrupted state '
+                f'during trade clearing evaluation.'
+            )
+
+# -----------------------------------------------------------------------------
+
+    @property
+    def state(self) -> OrderGroupState:
+        """The computed transaction lifecycle state of the execution group."""
+        if self._is_corrupted:
+            return OrderGroupState.CORRUPTED
+
+        is_flat = self._ledger.position_size == Decimal('0.0')
+        parent_state = self._order_states.get(self._parent_id)
+
+        bracket_orders_terminal = all(
+            state.is_terminal
+            for order_id, state in self._order_states.items()
+            if order_id != self._exit_order_id
+        )
+
+        exit_order_terminal = (
+            self._exit_order_id is None
+            or self._order_states[self._exit_order_id].is_terminal
+        )
+
+        exit_triggered = (
+            self._exit_order_id is not None
+            and self._order_states[self._exit_order_id] == OrderState.FILLED
+        )
+
+        children_triggered = any(
+            state == OrderState.FILLED
+            for client_order_id, state in self._order_states.items()
+            if client_order_id not in (self._parent_id, self._exit_order_id)
+        )
+
+        if is_flat:
+            if parent_state == OrderState.REJECTED:
+                return OrderGroupState.REJECTED
+
+            if parent_state == OrderState.CANCELED:
+                return OrderGroupState.CANCELED
+
+            if parent_state == OrderState.FILLED:
+                if bracket_orders_terminal and exit_order_terminal:
+                    return OrderGroupState.COMPLETED
+                return OrderGroupState.CLOSING
+
+            return OrderGroupState.PENDING
+
+        else:
+            if exit_triggered or children_triggered:
+                return OrderGroupState.CLOSING
+
+            return OrderGroupState.ACTIVE
 
 # =============================================================================
 # -----------------------------------------------------------------------------
