@@ -21,9 +21,11 @@ from core.models import (
     BrokerEvent,
     EventType,
     OrderSide,
+    OrderState,
 )
 from core.order_group import OrderGroup
 from tests.testutils import (
+    FakeBrokerAdapter,
     create_order_factory,
     create_order_receipt_factory,
     create_trade_receipt_factory,
@@ -224,20 +226,28 @@ def test_execution_tracker_terminate_execution_cancels_when_cancelable() -> None
 def test_execution_tracker_terminate_execution_closes_when_closable() -> None:
     """Verify that terminate_execution calls close_position if the group is closable."""
     tracker = ExecutionTracker()
-    domain_order = create_order_factory(client_order_id='ORDER_123')
+    domain_order = create_order_factory(
+        client_order_id='ORDER_123',
+        side=OrderSide.BUY
+    )
     tracker.register_order('BOT_TEST_A', domain_order)
     mock_adapter = MagicMock()
 
     with (
-        patch.object(OrderGroup, 'get_parent_order', return_value=domain_order),
         patch.object(OrderGroup, 'is_cancelable', return_value=False),
         patch.object(OrderGroup, 'is_closable', return_value=True),
         patch.object(OrderGroup, 'is_terminal', return_value=False),
     ):
         tracker.terminate_execution('BOT_TEST_A', mock_adapter)
 
-        mock_adapter.close_position.assert_called_once_with(domain_order)
-        assert tracker.has_active_execution('BOT_TEST_A')
+    assert 'ORDER_123-XT' in tracker._order_id_to_bot_id
+
+    called_order = mock_adapter.close_position.call_args[0][0]
+    assert called_order.client_order_id == 'ORDER_123-XT'
+    assert called_order.side == OrderSide.SELL
+    assert called_order.stop_loss_price is None
+    assert called_order.take_profit_price is None
+    assert tracker.has_active_execution('BOT_TEST_A')
 
 # -----------------------------------------------------------------------------
 
@@ -291,6 +301,47 @@ def test_execution_tracker_terminate_execution_ignores_transitional_phases() -> 
         mock_adapter.cancel_order.assert_not_called()
         mock_adapter.close_position.assert_not_called()
         assert tracker.has_active_execution('BOT_TEST_A')
+
+# -----------------------------------------------------------------------------
+
+def test_terminate_execution_forges_and_tracks_xt_order():
+    """Verify closure forges, indexes and routes the exit XT ticket."""
+    tracker = ExecutionTracker()
+    broker_adapter = FakeBrokerAdapter()
+
+    parent_order = create_order_factory(
+        client_order_id='ORD_123',
+        side=OrderSide.BUY,
+        stop_loss_price=1.0800,
+        take_profit_price=1.0900
+    )
+
+    tracker.register_order(bot_id='BOT_ID', order=parent_order)
+    group = tracker._executions['BOT_ID']
+
+    receipt = create_order_receipt_factory(
+        client_order_id='ORD_123',
+        group_id='ORD_123',
+        state=OrderState.FILLED
+    )
+    group.notify_order_change(receipt)
+
+    assert 'ORD_123-XT' not in tracker._order_id_to_bot_id
+    assert group._exit_order is None
+
+    tracker.terminate_execution(
+        bot_id='BOT_ID',
+        broker_adapter=broker_adapter
+    )
+
+    assert tracker._order_id_to_bot_id['ORD_123-XT'] == 'BOT_ID'
+
+    exit_order = group._exit_order
+    assert exit_order is not None
+    assert exit_order.client_order_id == 'ORD_123-XT'
+    assert exit_order.side == OrderSide.SELL
+    assert exit_order.stop_loss_price is None
+    assert exit_order.take_profit_price is None
 
 # =============================================================================
 # -----------------------------------------------------------------------------

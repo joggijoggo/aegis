@@ -175,7 +175,17 @@ class ExecutionTracker:
         if order_group.is_cancelable():
             broker_adapter.cancel_order(parent_order)
         elif order_group.is_closable():
-            broker_adapter.close_position(parent_order)
+            exit_order = replace(
+                parent_order,
+                client_order_id=f'{parent_order.client_order_id}-XT',
+                side=parent_order.side.reverse(),
+                stop_loss_price=None,
+                take_profit_price=None,
+            )
+
+            self._order_id_to_bot_id[exit_order.client_order_id] = bot_id
+            order_group.attach_exit_order(exit_order)
+            broker_adapter.close_position(exit_order)
         elif order_group.is_terminal():
             raise DanglingExecutionError(
                 f"Termination failure: bot '{bot_id}' execution group "
