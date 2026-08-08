@@ -384,6 +384,20 @@ class OrderGroup:
                 price=order_receipt.average_execution_price,
             )
 
+        # Isolated hybrid routing bypass for exit liquidation orders
+        if (
+            self._exit_order is not None
+            and order_receipt.client_order_id == self._exit_order.client_order_id
+        ):
+            if order_receipt.state == OrderState.FILLED:
+                self._state = OrderGroupState.CLOSING
+            elif order_receipt.state in (
+                OrderState.REJECTED,
+                OrderState.CANCELED,
+            ):
+                self._state = OrderGroupState.CORRUPTED
+            return
+
         self._order_states[order_receipt.client_order_id] = order_receipt.state
 
         is_parent = order_receipt.client_order_id == self._parent_id

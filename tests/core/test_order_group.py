@@ -1038,3 +1038,102 @@ def test_order_group_is_closable_returns_false_when_clearing_closed() -> None:
 # =============================================================================
 # -----------------------------------------------------------------------------
 # =============================================================================
+
+def test_order_group_hybrid_routing_bypasses_matrix_on_fill() -> None:
+    """Verify that an exit fill forces CLOSING state and bypasses history."""
+    parent_order = create_order_factory(
+        client_order_id='ORD_PARENT',
+        side=OrderSide.BUY,
+    )
+    group = OrderGroup(parent_id='ORD_PARENT', orders=[parent_order])
+
+    # Open position at the ledger and satisfy legacy matrix initialization
+    parent_receipt = OrderReceipt(
+        client_order_id='ORD_PARENT',
+        group_id='ORD_PARENT',
+        state=OrderState.FILLED,
+        executed_quantity=Decimal('10.0'),
+        average_execution_price=Decimal('100.0'),
+        broker_order_id='B_01',
+        reject_reason=None,
+    )
+    group.notify_order_change(parent_receipt)
+
+    # Attach and execute the exit order to trigger the hybrid route
+    exit_order = create_order_factory(
+        client_order_id='ORD_PARENT-XT',
+        side=OrderSide.SELL,
+    )
+    group.attach_exit_order(exit_order)
+
+    exit_receipt = OrderReceipt(
+        client_order_id='ORD_PARENT-XT',
+        group_id='ORD_PARENT',
+        state=OrderState.FILLED,
+        executed_quantity=Decimal('10.0'),
+        average_execution_price=Decimal('110.0'),
+        broker_order_id='B_02',
+        reject_reason=None,
+    )
+    group.notify_order_change(exit_receipt)
+
+    # Validate absolute isolation from legacy matrix processing mechanics
+    assert group._state == OrderGroupState.CLOSING
+    assert 'ORD_PARENT-XT' not in group._order_states
+
+# -----------------------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    'terminal_state',
+    [
+        OrderState.REJECTED,
+        OrderState.CANCELED,
+    ],
+)
+def test_order_group_hybrid_routing_faults_on_exit_failure(
+    terminal_state: OrderState,
+) -> None:
+    """Verify that an exit failure triggers a corrupted state disjunction."""
+    parent_order = create_order_factory(
+        client_order_id='ORD_PARENT',
+        side=OrderSide.BUY,
+    )
+    group = OrderGroup(parent_id='ORD_PARENT', orders=[parent_order])
+
+    # Open position at the ledger and satisfy legacy matrix initialization
+    parent_receipt = OrderReceipt(
+        client_order_id='ORD_PARENT',
+        group_id='ORD_PARENT',
+        state=OrderState.FILLED,
+        executed_quantity=Decimal('10.0'),
+        average_execution_price=Decimal('100.0'),
+        broker_order_id='B_01',
+        reject_reason=None,
+    )
+    group.notify_order_change(parent_receipt)
+
+    # Attach the exit order that will fail to execute
+    exit_order = create_order_factory(
+        client_order_id='ORD_PARENT-XT',
+        side=OrderSide.SELL,
+    )
+    group.attach_exit_order(exit_order)
+
+    exit_receipt = OrderReceipt(
+        client_order_id='ORD_PARENT-XT',
+        group_id='ORD_PARENT',
+        state=terminal_state,
+        executed_quantity=Decimal('0.0'),
+        average_execution_price=None,
+        broker_order_id='B_02',
+        reject_reason='Venue execution failure infrastructure fault',
+    )
+    group.notify_order_change(exit_receipt)
+
+    # Validate fail-fast protection and structural storage isolation
+    assert group._state == OrderGroupState.CORRUPTED
+    assert 'ORD_PARENT-XT' not in group._order_states
+
+# =============================================================================
+# -----------------------------------------------------------------------------
+# =============================================================================
