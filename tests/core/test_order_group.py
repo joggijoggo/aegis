@@ -9,12 +9,14 @@ from decimal import Decimal
 import pytest
 
 from core.exceptions import (
+    ClearingCorruptionError,
     CorruptedOrderGroupError,
     NettingRestrictionError,
     UntrackedOrderException,
 )
 from core.models import (
     OrderGroupState,
+    OrderReceipt,
     OrderSide,
     OrderState,
     OrderType,
@@ -821,6 +823,105 @@ def test_attach_exit_order_identity_conflict_raises():
     )
     with pytest.raises(ValueError, match=expected_msg):
         group.attach_exit_order(conflicting_exit)
+
+# =============================================================================
+# -----------------------------------------------------------------------------
+# =============================================================================
+
+def test_order_group_routes_parent_fill_to_ledger() -> None:
+    """Verify that a nominal parent execution fill updates the inner ledger."""
+    parent_order = create_order_factory(
+        client_order_id='ORD_PARENT',
+        side=OrderSide.BUY,
+    )
+    group = OrderGroup(parent_id='ORD_PARENT', orders=[parent_order])
+
+    assert group.ledger.position_size == Decimal('0.0')
+
+    receipt = OrderReceipt(
+        client_order_id='ORD_PARENT',
+        group_id='ORD_PARENT',
+        state='FILLED',
+        executed_quantity=Decimal('10.0'),
+        average_execution_price=Decimal('100.0'),
+        broker_order_id='B_01',
+        reject_reason=None,
+    )
+
+    group.notify_order_change(receipt)
+
+    assert group.ledger.position_size == Decimal('10.0')
+    assert group.ledger.average_price == Decimal('100.0')
+
+# -----------------------------------------------------------------------------
+
+def test_order_group_routes_exit_order_fill_to_ledger() -> None:
+    """Verify that an exit ticket fill bypasses filters and clears exposure."""
+    parent_order = create_order_factory(
+        client_order_id='ORD_PARENT',
+        side=OrderSide.BUY,
+    )
+    group = OrderGroup(parent_id='ORD_PARENT', orders=[parent_order])
+
+    # Execute parent order to satisfy legacy matrix and open exposure
+    parent_receipt = OrderReceipt(
+        client_order_id='ORD_PARENT',
+        group_id='ORD_PARENT',
+        state='FILLED',
+        executed_quantity=Decimal('10.0'),
+        average_execution_price=Decimal('100.0'),
+        broker_order_id='B_01',
+        reject_reason=None,
+    )
+    group.notify_order_change(parent_receipt)
+
+    assert group.ledger.position_size == Decimal('10.0')
+    assert group.ledger.realized_pnl == Decimal('0.0')
+
+    # Attach and execute the exit order to clear physical exposure
+    exit_order = create_order_factory(
+        client_order_id='ORD_PARENT-XT',
+        side=OrderSide.SELL,
+    )
+    group.attach_exit_order(exit_order)
+
+    exit_receipt = OrderReceipt(
+        client_order_id='ORD_PARENT-XT',
+        group_id='ORD_PARENT',
+        state='FILLED',
+        executed_quantity=Decimal('10.0'),
+        average_execution_price=Decimal('110.0'),
+        broker_order_id='B_02',
+        reject_reason=None,
+    )
+    group.notify_order_change(exit_receipt)
+
+    assert group.ledger.position_size == Decimal('0.0')
+    assert group.ledger.realized_pnl == Decimal('100.0')
+
+# -----------------------------------------------------------------------------
+
+def test_order_group_missing_price_raises_clearing_corruption() -> None:
+    """Verify that execution volume without a price triggers a fault routing."""
+    parent_order = create_order_factory(
+        client_order_id='ORD_PARENT',
+        side=OrderSide.BUY,
+    )
+    group = OrderGroup(parent_id='ORD_PARENT', orders=[parent_order])
+
+    receipt = OrderReceipt(
+        client_order_id='ORD_PARENT',
+        group_id='ORD_PARENT',
+        state='FILLED',
+        executed_quantity=Decimal('5.0'),
+        average_execution_price=None,
+        broker_order_id='B_03',
+        reject_reason=None,
+    )
+
+    expected_pattern = 'volume-weighted execution price was missing'
+    with pytest.raises(ClearingCorruptionError, match=expected_pattern):
+        group.notify_order_change(receipt)
 
 # =============================================================================
 # -----------------------------------------------------------------------------

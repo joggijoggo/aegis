@@ -3,7 +3,9 @@
 Maintains structural integrity and execution alignment for contingent trading lifecycles.
 """
 
+from core.clearing_ledger import ClearingLedger
 from core.exceptions import (
+    ClearingCorruptionError,
     CorruptedOrderGroupError,
     NettingRestrictionError,
     UntrackedOrderException,
@@ -187,6 +189,7 @@ class OrderGroup:
         """
         self._parent_id: str = parent_id
         self._clearing_closed: bool | None = None
+        self._ledger = ClearingLedger()
 
         self._exit_order: Order | None = None
         self._orders: dict[str, Order] = {}
@@ -314,6 +317,13 @@ class OrderGroup:
 
 # -----------------------------------------------------------------------------
 
+    @property
+    def ledger(self) -> ClearingLedger:
+        """Retrieves the clearing ledger tracking physical volume balances."""
+        return self._ledger
+
+# -----------------------------------------------------------------------------
+
     def notify_order_change(self, order_receipt: OrderReceipt) -> None:
         """Ingests an infrastructure execution receipt to update the contingent group state.
 
@@ -321,6 +331,7 @@ class OrderGroup:
             order_receipt: The incoming broker order execution receipt payload.
 
         Raises:
+            ClearingCorruptionError: when an execution fill lacks pricing data.
             CorruptedOrderGroupError: when the order group state is corrupted.
             UntrackedOrderException: when the receipt order id does not belong to the group.
         """
@@ -335,10 +346,32 @@ class OrderGroup:
                 f"Order state {order_receipt.state} is not supported in the current framework."
             )
 
-        if order_receipt.client_order_id not in self._orders:
+        origin_order = self._orders.get(order_receipt.client_order_id)
+        if (
+            origin_order is None
+            and self._exit_order is not None
+            and self._exit_order.client_order_id == order_receipt.client_order_id
+        ):
+            origin_order = self._exit_order
+
+        if origin_order is None:
             raise UntrackedOrderException(
                 f'Order "{order_receipt.client_order_id}" not found '
                 f'in group "{self._parent_id}".'
+            )
+
+        if order_receipt.executed_quantity > 0:
+            if order_receipt.average_execution_price is None:
+                raise ClearingCorruptionError(
+                    f'order "{order_receipt.client_order_id}" reported an '
+                    f'execution volume of {order_receipt.executed_quantity} '
+                    f'but the volume-weighted execution price was missing (None).'
+                )
+
+            self._ledger.update_exposure(
+                side=origin_order.side,
+                quantity=order_receipt.executed_quantity,
+                price=order_receipt.average_execution_price,
             )
 
         self._order_states[order_receipt.client_order_id] = order_receipt.state
