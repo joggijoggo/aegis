@@ -275,8 +275,6 @@ def test_backtrader_broker_adapter_close_position_nominal_success() -> None:
     mock_bridge = MagicMock()
     adapter = BacktraderBrokerAdapter(bridge=mock_bridge)
 
-    domain_order = create_order_factory(symbol='EURUSD')
-
     mock_data_feed = MagicMock()
     mock_data_feed._name = 'EURUSD'
     mock_bridge.strategy.datas = [mock_data_feed]
@@ -285,10 +283,19 @@ def test_backtrader_broker_adapter_close_position_nominal_success() -> None:
     mock_position.size = 10
     mock_bridge.strategy.positions = {mock_data_feed: mock_position}
 
-    with patch.object(mock_bridge.strategy, "close") as mock_close:
-        adapter.close_position(domain_order)
+    exit_order = create_order_factory(
+        client_order_id='ORD_123-XT',
+        symbol='EURUSD',
+        side=OrderSide.SELL
+    )
 
-        mock_close.assert_called_once_with(data=mock_data_feed)
+    with patch.object(mock_bridge.strategy, "close") as mock_close:
+        adapter.close_position(exit_order)
+
+        mock_close.assert_called_once_with(
+            data=mock_data_feed,
+            client_order_id='ORD_123-XT'
+        )
 
 # -----------------------------------------------------------------------------
 

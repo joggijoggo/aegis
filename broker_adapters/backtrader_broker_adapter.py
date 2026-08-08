@@ -444,7 +444,10 @@ class BacktraderBrokerAdapter(BaseBrokerAdapter):
         position = self._bridge.strategy.positions.get(target_data)
 
         if position is not None and position.size != 0:
-            self._bridge.strategy.close(data=target_data)
+            self._bridge.strategy.close(
+                data=target_data,
+                client_order_id=order.client_order_id,
+            )
             return
 
         raise BrokerPositionNotFoundError(
