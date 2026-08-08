@@ -192,10 +192,12 @@ class OrderGroup:
         self._parent_id: str = parent_id
         self._clearing_closed: bool | None = None
         self._ledger = ClearingLedger()
+        self._is_corrupted: bool = False
 
         self._exit_order: Order | None = None
         self._orders: dict[str, Order] = {}
         self._order_states: dict[str, OrderState] = {}
+        self._exit_order_state: OrderState | None = None # TODO: Remove it
 
         for order in orders:
             self._orders[order.client_order_id] = order
@@ -267,6 +269,7 @@ class OrderGroup:
             )
 
         self._exit_order = exit_order
+        self._exit_order_state = OrderState.PENDING # TODO: Remove it
 
 # -----------------------------------------------------------------------------
 
@@ -396,6 +399,7 @@ class OrderGroup:
                 OrderState.CANCELED,
             ):
                 self._state = OrderGroupState.CORRUPTED
+            self._exit_order_state = order_receipt.state # TODO: Remove it
             return
 
         self._order_states[order_receipt.client_order_id] = order_receipt.state
@@ -457,6 +461,57 @@ class OrderGroup:
                 f'to {self._state} during trade clearing evaluation. '
                 f'Trade Open flag: {trade_receipt.is_open}.'
             )
+
+# -----------------------------------------------------------------------------
+
+    @property
+    def state(self) -> OrderGroupState:
+        """The computed transaction lifecycle state of the execution group."""
+        if self._is_corrupted:
+            return OrderGroupState.CORRUPTED
+
+        is_flat = self._ledger.position_size == Decimal('0.0')
+        parent_state = self._order_states.get(self._parent_id)
+
+        legacy_orders_terminal = all(
+            state.is_terminal for state in self._order_states.values()
+        )
+
+        exit_order_terminal = (
+            self._exit_order is None
+            or self._exit_order_state.is_terminal
+        )
+
+        exit_triggered = (
+            self._exit_order is not None
+            and self._exit_order_state == OrderState.FILLED
+        )
+
+        children_triggered = any(
+            state == OrderState.FILLED
+            for client_order_id, state in self._order_states.items()
+            if client_order_id != self._parent_id
+        )
+
+        if is_flat:
+            if parent_state == OrderState.REJECTED:
+                return OrderGroupState.REJECTED
+
+            if parent_state == OrderState.CANCELED:
+                return OrderGroupState.CANCELED
+
+            if parent_state == OrderState.FILLED:
+                if legacy_orders_terminal and exit_order_terminal:
+                    return OrderGroupState.COMPLETED
+                return OrderGroupState.CLOSING
+
+            return OrderGroupState.PENDING
+
+        else:
+            if exit_triggered or children_triggered:
+                return OrderGroupState.CLOSING
+
+            return OrderGroupState.ACTIVE
 
 # =============================================================================
 # -----------------------------------------------------------------------------

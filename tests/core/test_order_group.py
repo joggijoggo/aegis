@@ -1137,3 +1137,318 @@ def test_order_group_hybrid_routing_faults_on_exit_failure(
 # =============================================================================
 # -----------------------------------------------------------------------------
 # =============================================================================
+
+def test_computed_state_prioritizes_corruption_guard() -> None:
+    """Verify that the corruption flag forces CORRUPTED regardless of data."""
+    parent_order = create_order_factory(
+        client_order_id='ORD_PARENT',
+        side=OrderSide.BUY,
+    )
+    group = OrderGroup(parent_id='ORD_PARENT', orders=[parent_order])
+
+    receipt = OrderReceipt(
+        client_order_id='ORD_PARENT',
+        group_id='ORD_PARENT',
+        state=OrderState.FILLED,
+        executed_quantity=Decimal('10.0'),
+        average_execution_price=Decimal('100.0'),
+        broker_order_id='B_01',
+        reject_reason=None,
+    )
+    group.notify_order_change(receipt)
+
+    group._is_corrupted = True
+
+    assert group.state == OrderGroupState.CORRUPTED
+
+# -----------------------------------------------------------------------------
+
+def test_computed_state_returns_pending_on_initial_setup() -> None:
+    """Verify that a flat group with a pending parent evaluates to PENDING."""
+    parent_order = create_order_factory(
+        client_order_id='ORD_PARENT',
+        side=OrderSide.BUY,
+    )
+    group = OrderGroup(parent_id='ORD_PARENT', orders=[parent_order])
+
+    receipt = OrderReceipt(
+        client_order_id='ORD_PARENT',
+        group_id='ORD_PARENT',
+        state=OrderState.PENDING,
+        executed_quantity=Decimal('0.0'),
+        average_execution_price=None,
+        broker_order_id='B_01',
+        reject_reason=None,
+    )
+    group.notify_order_change(receipt)
+
+    assert group.state == OrderGroupState.PENDING
+
+# -----------------------------------------------------------------------------
+
+def test_computed_state_returns_active_on_open_exposure() -> None:
+    """Verify that an open physical position evaluates to ACTIVE."""
+    parent_order = create_order_factory(
+        client_order_id='ORD_PARENT',
+        side=OrderSide.BUY,
+    )
+    group = OrderGroup(parent_id='ORD_PARENT', orders=[parent_order])
+
+    receipt = OrderReceipt(
+        client_order_id='ORD_PARENT',
+        group_id='ORD_PARENT',
+        state=OrderState.FILLED,
+        executed_quantity=Decimal('10.0'),
+        average_execution_price=Decimal('100.0'),
+        broker_order_id='B_01',
+        reject_reason=None,
+    )
+    group.notify_order_change(receipt)
+
+    assert group.state == OrderGroupState.ACTIVE
+
+# -----------------------------------------------------------------------------
+
+def test_computed_state_returns_closing_on_over_hedged_residual() -> None:
+    """Verify that an executed exit order with residual exposure sets CLOSING."""
+    parent_order = create_order_factory(
+        client_order_id='ORD_PARENT',
+        side=OrderSide.BUY,
+    )
+    group = OrderGroup(parent_id='ORD_PARENT', orders=[parent_order])
+
+    parent_receipt = OrderReceipt(
+        client_order_id='ORD_PARENT',
+        group_id='ORD_PARENT',
+        state=OrderState.FILLED,
+        executed_quantity=Decimal('10.0'),
+        average_execution_price=Decimal('100.0'),
+        broker_order_id='B_01',
+        reject_reason=None,
+    )
+    group.notify_order_change(parent_receipt)
+
+    exit_order = create_order_factory(
+        client_order_id='ORD_PARENT-XT',
+        side=OrderSide.SELL,
+    )
+    group.attach_exit_order(exit_order)
+
+    exit_receipt = OrderReceipt(
+        client_order_id='ORD_PARENT-XT',
+        group_id='ORD_PARENT',
+        state=OrderState.FILLED,
+        executed_quantity=Decimal('15.0'),
+        average_execution_price=Decimal('105.0'),
+        broker_order_id='B_02',
+        reject_reason=None,
+    )
+    group.notify_order_change(exit_receipt)
+
+    assert group.state == OrderGroupState.CLOSING
+
+# -----------------------------------------------------------------------------
+
+def test_computed_state_returns_closing_when_awaiting_child_purges() -> None:
+    """Verify that a flat group awaiting child cancellations evaluates to CLOSING."""
+    parent_order = create_order_factory(
+        client_order_id='ORD_PARENT',
+        side=OrderSide.BUY,
+    )
+    # Inject a child order to simulate a protection remaining in the book
+    child_order = create_order_factory(
+        client_order_id='ORD_CHILD_SL',
+        side=OrderSide.SELL,
+    )
+    group = OrderGroup(
+        parent_id='ORD_PARENT',
+        orders=[parent_order, child_order],
+    )
+
+    parent_receipt = OrderReceipt(
+        client_order_id='ORD_PARENT',
+        group_id='ORD_PARENT',
+        state=OrderState.FILLED,
+        executed_quantity=Decimal('10.0'),
+        average_execution_price=Decimal('100.0'),
+        broker_order_id='B_01',
+        reject_reason=None,
+    )
+    group.notify_order_change(parent_receipt)
+
+    exit_order = create_order_factory(
+        client_order_id='ORD_PARENT-XT',
+        side=OrderSide.SELL,
+    )
+    group.attach_exit_order(exit_order)
+
+    exit_receipt = OrderReceipt(
+        client_order_id='ORD_PARENT-XT',
+        group_id='ORD_PARENT',
+        state=OrderState.FILLED,
+        executed_quantity=Decimal('10.0'),
+        average_execution_price=Decimal('100.0'),
+        broker_order_id='B_02',
+        reject_reason=None,
+    )
+    group.notify_order_change(exit_receipt)
+
+    # Flat position but child_order is still PENDING: must evaluate to CLOSING
+    assert group.state == OrderGroupState.CLOSING
+
+# -----------------------------------------------------------------------------
+
+def test_computed_state_returns_completed_when_all_orders_terminal() -> None:
+    """Verify that a flat group with all orders terminal evaluates to COMPLETED."""
+    parent_order = create_order_factory(
+        client_order_id='ORD_PARENT',
+        side=OrderSide.BUY,
+    )
+    # Inject a child order to simulate a protection bracket setup
+    child_order = create_order_factory(
+        client_order_id='ORD_CHILD_SL',
+        side=OrderSide.SELL,
+    )
+    group = OrderGroup(
+        parent_id='ORD_PARENT',
+        orders=[parent_order, child_order],
+    )
+
+    parent_receipt = OrderReceipt(
+        client_order_id='ORD_PARENT',
+        group_id='ORD_PARENT',
+        state=OrderState.FILLED,
+        executed_quantity=Decimal('10.0'),
+        average_execution_price=Decimal('100.0'),
+        broker_order_id='B_01',
+        reject_reason=None,
+    )
+    group.notify_order_change(parent_receipt)
+
+    exit_order = create_order_factory(
+        client_order_id='ORD_PARENT-XT',
+        side=OrderSide.SELL,
+    )
+    group.attach_exit_order(exit_order)
+
+    exit_receipt = OrderReceipt(
+        client_order_id='ORD_PARENT-XT',
+        group_id='ORD_PARENT',
+        state=OrderState.FILLED,
+        executed_quantity=Decimal('10.0'),
+        average_execution_price=Decimal('100.0'),
+        broker_order_id='B_02',
+        reject_reason=None,
+    )
+    group.notify_order_change(exit_receipt)
+
+    # Simulate broker confirming the cancellation of the protection order
+    child_receipt = OrderReceipt(
+        client_order_id='ORD_CHILD_SL',
+        group_id='ORD_PARENT',
+        state=OrderState.CANCELED,
+        executed_quantity=Decimal('0.0'),
+        average_execution_price=None,
+        broker_order_id='B_03',
+        reject_reason=None,
+    )
+    group.notify_order_change(child_receipt)
+
+    assert group.state == OrderGroupState.COMPLETED
+
+# -----------------------------------------------------------------------------
+
+def test_computed_state_returns_rejected_on_parent_failure() -> None:
+    """Verify that a rejected parent entry order evaluates to REJECTED."""
+    parent_order = create_order_factory(
+        client_order_id='ORD_PARENT',
+        side=OrderSide.BUY,
+    )
+    group = OrderGroup(parent_id='ORD_PARENT', orders=[parent_order])
+
+    receipt = OrderReceipt(
+        client_order_id='ORD_PARENT',
+        group_id='ORD_PARENT',
+        state=OrderState.REJECTED,
+        executed_quantity=Decimal('0.0'),
+        average_execution_price=None,
+        broker_order_id='B_01',
+        reject_reason='Margin insufficiency fault',
+    )
+    group.notify_order_change(receipt)
+
+    assert group.state == OrderGroupState.REJECTED
+
+# -----------------------------------------------------------------------------
+
+def test_computed_state_returns_canceled_on_parent_abort() -> None:
+    """Verify that a canceled parent entry order evaluates to CANCELED."""
+    parent_order = create_order_factory(
+        client_order_id='ORD_PARENT',
+        side=OrderSide.BUY,
+    )
+    group = OrderGroup(parent_id='ORD_PARENT', orders=[parent_order])
+
+    receipt = OrderReceipt(
+        client_order_id='ORD_PARENT',
+        group_id='ORD_PARENT',
+        state=OrderState.CANCELED,
+        executed_quantity=Decimal('0.0'),
+        average_execution_price=None,
+        broker_order_id='B_01',
+        reject_reason=None,
+    )
+    group.notify_order_change(receipt)
+
+    assert group.state == OrderGroupState.CANCELED
+
+# -----------------------------------------------------------------------------
+
+def test_computed_state_returns_closing_on_nominal_protection_fill() -> None:
+    """Verify that a filled protection order with pending sibling sets CLOSING."""
+    parent_order = create_order_factory(
+        client_order_id='ORD_PARENT',
+        side=OrderSide.BUY,
+    )
+    child_sl = create_order_factory(
+        client_order_id='ORD_CHILD_SL',
+        side=OrderSide.SELL,
+    )
+    child_tp = create_order_factory(
+        client_order_id='ORD_CHILD_TP',
+        side=OrderSide.SELL,
+    )
+    group = OrderGroup(
+        parent_id='ORD_PARENT',
+        orders=[parent_order, child_sl, child_tp],
+    )
+
+    parent_receipt = OrderReceipt(
+        client_order_id='ORD_PARENT',
+        group_id='ORD_PARENT',
+        state=OrderState.FILLED,
+        executed_quantity=Decimal('10.0'),
+        average_execution_price=Decimal('100.0'),
+        broker_order_id='B_01',
+        reject_reason=None,
+    )
+    group.notify_order_change(parent_receipt)
+
+    # Enforce the market hit on the Stop-Loss order to flatten exposure
+    sl_receipt = OrderReceipt(
+        client_order_id='ORD_CHILD_SL',
+        group_id='ORD_PARENT',
+        state=OrderState.FILLED,
+        executed_quantity=Decimal('10.0'),
+        average_execution_price=Decimal('95.0'),
+        broker_order_id='B_02',
+        reject_reason=None,
+    )
+    group.notify_order_change(sl_receipt)
+
+    # Flat ledger but pending Take-Profit sibling must trigger CLOSING state
+    assert group.state == OrderGroupState.CLOSING
+
+# =============================================================================
+# -----------------------------------------------------------------------------
+# =============================================================================
