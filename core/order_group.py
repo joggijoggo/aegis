@@ -5,6 +5,7 @@ Maintains structural integrity and execution alignment for contingent trading li
 
 from core.exceptions import (
     CorruptedOrderGroupError,
+    NettingRestrictionError,
     UntrackedOrderException,
 )
 from core.models import (
@@ -187,6 +188,7 @@ class OrderGroup:
         self._parent_id: str = parent_id
         self._clearing_closed: bool | None = None
 
+        self._exit_order: Order | None = None
         self._orders: dict[str, Order] = {}
         self._order_states: dict[str, OrderState] = {}
 
@@ -234,6 +236,32 @@ class OrderGroup:
 
             if all_orders_terminal:
                 self._state = OrderGroupState.COMPLETED
+
+# -----------------------------------------------------------------------------
+
+    def attach_exit_order(self, exit_order: Order) -> None:
+        """Binds the liquidation order instance to the group execution context.
+
+        Args:
+            exit_order: The order instance used to close the position.
+
+        Raises:
+            NettingRestrictionError: When an exit order is already attached.
+            ValueError: When the exit order ID conflicts with an existing order.
+        """
+        if self._exit_order is not None:
+            raise NettingRestrictionError(
+                f'An exit order is already registered for group '
+                f'"{self._parent_id}".'
+            )
+
+        if exit_order.client_order_id in self._orders:
+            raise ValueError(
+                f'Order ID "{exit_order.client_order_id}" conflicts '
+                f'with an existing order in group.'
+            )
+
+        self._exit_order = exit_order
 
 # -----------------------------------------------------------------------------
 

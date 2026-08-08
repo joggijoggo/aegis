@@ -10,6 +10,7 @@ import pytest
 
 from core.exceptions import (
     CorruptedOrderGroupError,
+    NettingRestrictionError,
     UntrackedOrderException,
 )
 from core.models import (
@@ -768,6 +769,58 @@ def test_order_group_denies_cancellation_while_rejecting_with_clearing_latency()
     order_group._clearing_closed = None
 
     assert not order_group.is_cancelable()
+
+# =============================================================================
+# -----------------------------------------------------------------------------
+# =============================================================================
+
+def test_attach_exit_order_nominal():
+    """Verify clean attachment under nominal conditions."""
+    parent_order = create_order_factory(client_order_id='ORD_123')
+    group = OrderGroup(parent_id='ORD_123', orders=[parent_order])
+
+    exit_order = create_order_factory(client_order_id='ORD_123-XT')
+
+    assert group._exit_order is None
+
+    group.attach_exit_order(exit_order)
+    assert group._exit_order is exit_order
+
+# -----------------------------------------------------------------------------
+
+def test_attach_exit_order_duplicate_raises():
+    """Verify subsequent attachments trigger a netting error."""
+    parent_order = create_order_factory(client_order_id='ORD_123')
+    group = OrderGroup(parent_id='ORD_123', orders=[parent_order])
+
+    exit_1 = create_order_factory(client_order_id='ORD_123-XT')
+    exit_2 = create_order_factory(client_order_id='ORD_123-XT2')
+
+    group.attach_exit_order(exit_1)
+
+    assert group._exit_order is exit_1
+
+    expected_msg = 'An exit order is already registered for group "ORD_123".'
+    with pytest.raises(NettingRestrictionError, match=expected_msg):
+        group.attach_exit_order(exit_2)
+
+# -----------------------------------------------------------------------------
+
+def test_attach_exit_order_identity_conflict_raises():
+    """Verify identity collisions trigger a value error."""
+    parent_order = create_order_factory(client_order_id='ORD_123')
+    group = OrderGroup(parent_id='ORD_123', orders=[parent_order])
+
+    conflicting_exit = create_order_factory(client_order_id='ORD_123')
+
+    assert group._exit_order is None
+
+    expected_msg = (
+        'Order ID "ORD_123" conflicts with an '
+        'existing order in group.'
+    )
+    with pytest.raises(ValueError, match=expected_msg):
+        group.attach_exit_order(conflicting_exit)
 
 # =============================================================================
 # -----------------------------------------------------------------------------
