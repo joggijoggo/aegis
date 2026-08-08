@@ -327,7 +327,7 @@ def test_terminate_execution_forges_and_tracks_xt_order():
     group.notify_order_change(receipt)
 
     assert 'ORD_123-XT' not in tracker._order_id_to_bot_id
-    assert group._exit_order is None
+    assert group._exit_order_id is None
 
     tracker.terminate_execution(
         bot_id='BOT_ID',
@@ -336,7 +336,7 @@ def test_terminate_execution_forges_and_tracks_xt_order():
 
     assert tracker._order_id_to_bot_id['ORD_123-XT'] == 'BOT_ID'
 
-    exit_order = group._exit_order
+    exit_order = group._orders[group._exit_order_id]
     assert exit_order is not None
     assert exit_order.client_order_id == 'ORD_123-XT'
     assert exit_order.side == OrderSide.SELL

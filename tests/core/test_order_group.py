@@ -431,10 +431,10 @@ def test_attach_exit_order_nominal():
 
     exit_order = create_order_factory(client_order_id='ORD_123-XT')
 
-    assert group._exit_order is None
+    assert group._exit_order_id is None
 
     group.attach_exit_order(exit_order)
-    assert group._exit_order is exit_order
+    assert group._exit_order_id is exit_order.client_order_id
 
 # -----------------------------------------------------------------------------
 
@@ -448,9 +448,9 @@ def test_attach_exit_order_duplicate_raises():
 
     group.attach_exit_order(exit_1)
 
-    assert group._exit_order is exit_1
+    assert group._orders[group._exit_order_id] is exit_1
 
-    expected_msg = 'An exit order is already registered for group "ORD_123".'
+    expected_msg = 'is already registered for group "ORD_123".'
     with pytest.raises(NettingRestrictionError, match=expected_msg):
         group.attach_exit_order(exit_2)
 
@@ -463,7 +463,7 @@ def test_attach_exit_order_identity_conflict_raises():
 
     conflicting_exit = create_order_factory(client_order_id='ORD_123')
 
-    assert group._exit_order is None
+    assert group._exit_order_id is None
 
     expected_msg = (
         'Order ID "ORD_123" conflicts with an '
@@ -624,7 +624,8 @@ def test_order_group_circuit_breaker_locks_on_exit_order_failure(
 
     # Validate fail-fast protection and structural storage isolation
     assert group.state == OrderGroupState.CORRUPTED
-    assert 'ORD_PARENT-XT' not in group._order_states
+    assert 'ORD_PARENT-XT' in group._order_states
+    assert group._order_states['ORD_PARENT-XT'] == terminal_state
 
 # =============================================================================
 # -----------------------------------------------------------------------------

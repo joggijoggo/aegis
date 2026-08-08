@@ -40,14 +40,14 @@ class OrderGroup:
             orders: Collection of all contingent orders belonging to this transaction.
         """
         self._parent_id: str = parent_id
+        self._exit_order_id: str | None = None
+
         self._clearing_closed: bool | None = None
         self._ledger = ClearingLedger()
         self._is_corrupted: bool = False
 
-        self._exit_order: Order | None = None
         self._orders: dict[str, Order] = {}
         self._order_states: dict[str, OrderState] = {}
-        self._exit_order_state: OrderState | None = None # TODO: Remove it
 
         for order in orders:
             self._orders[order.client_order_id] = order
@@ -71,20 +71,22 @@ class OrderGroup:
             NettingRestrictionError: When an exit order is already attached.
             ValueError: When the exit order ID conflicts with an existing order.
         """
-        if self._exit_order is not None:
+        if self._exit_order_id is not None:
             raise NettingRestrictionError(
-                f'An exit order is already registered for group '
-                f'"{self._parent_id}".'
+                f'An exit order ({self._exit_order_id} is already registered '
+                f'for group "{self._parent_id}".'
             )
 
+        # Double checks.
         if exit_order.client_order_id in self._orders:
             raise ValueError(
                 f'Order ID "{exit_order.client_order_id}" conflicts '
                 f'with an existing order in group.'
             )
 
-        self._exit_order = exit_order
-        self._exit_order_state = OrderState.PENDING # TODO: Remove it
+        self._exit_order_id = exit_order.client_order_id
+        self._orders[exit_order.client_order_id] = exit_order
+        self._order_states[exit_order.client_order_id] = OrderState.PENDING
 
 # -----------------------------------------------------------------------------
 
@@ -115,7 +117,7 @@ class OrderGroup:
             True if the group is closable, False otherwise.
         """
         # Hard intention lock preventing concurrent double-liquidation
-        if self._exit_order is not None:
+        if self._exit_order_id is not None:
             return False
 
         # Physical volume lock protecting against flat exposure clearance
@@ -174,19 +176,13 @@ class OrderGroup:
                 f"Order state {order_receipt.state} is not supported in the current framework."
             )
 
-        origin_order = self._orders.get(order_receipt.client_order_id)
-        if (
-            origin_order is None
-            and self._exit_order is not None
-            and self._exit_order.client_order_id == order_receipt.client_order_id
-        ):
-            origin_order = self._exit_order
-
-        if origin_order is None:
+        if order_receipt.client_order_id not in self._orders:
             raise UntrackedOrderException(
                 f'Order "{order_receipt.client_order_id}" not found '
                 f'in group "{self._parent_id}".'
             )
+
+        self._order_states[order_receipt.client_order_id] = order_receipt.state
 
         if order_receipt.executed_quantity > 0:
             if order_receipt.average_execution_price is None:
@@ -196,28 +192,18 @@ class OrderGroup:
                     f'but the volume-weighted execution price was missing (None).'
                 )
 
+            order = self._orders[order_receipt.client_order_id]
             self._ledger.update_exposure(
-                side=origin_order.side,
+                side=order.side,
                 quantity=order_receipt.executed_quantity,
                 price=order_receipt.average_execution_price,
             )
 
-        # Isolated hybrid routing bypass for exit liquidation orders
         if (
-            self._exit_order is not None
-            and order_receipt.client_order_id == self._exit_order.client_order_id
+            order_receipt.client_order_id == self._exit_order_id
+            and order_receipt.state in (OrderState.CANCELED, OrderState.REJECTED)
         ):
-            self._exit_order_state = order_receipt.state # TODO: Remove it
-
-            if order_receipt.state in (
-                OrderState.REJECTED,
-                OrderState.CANCELED,
-            ):
-                self._is_corrupted = True
-
-            return
-
-        self._order_states[order_receipt.client_order_id] = order_receipt.state
+            self._is_corrupted = True
 
 # -----------------------------------------------------------------------------
 
@@ -243,13 +229,13 @@ class OrderGroup:
             any_child_filled = any(
                 order_state == OrderState.FILLED
                 for order_id, order_state in self._order_states.items()
-                if order_id != self._parent_id
+                if order_id not in (self._parent_id, self._exit_order_id)
             )
 
             # Exclude authorized exit liquidations from clandestine closure guards
             if (
                 not any_child_filled
-                and self._exit_order is None
+                and self._exit_order_id is None
                 and self.state == OrderGroupState.ACTIVE
             ):
                 self._is_corrupted = True
@@ -271,24 +257,26 @@ class OrderGroup:
         is_flat = self._ledger.position_size == Decimal('0.0')
         parent_state = self._order_states.get(self._parent_id)
 
-        legacy_orders_terminal = all(
-            state.is_terminal for state in self._order_states.values()
+        bracket_orders_terminal = all(
+            state.is_terminal
+            for order_id, state in self._order_states.items()
+            if order_id != self._exit_order_id
         )
 
         exit_order_terminal = (
-            self._exit_order is None
-            or self._exit_order_state.is_terminal
+            self._exit_order_id is None
+            or self._order_states[self._exit_order_id].is_terminal
         )
 
         exit_triggered = (
-            self._exit_order is not None
-            and self._exit_order_state == OrderState.FILLED
+            self._exit_order_id is not None
+            and self._order_states[self._exit_order_id] == OrderState.FILLED
         )
 
         children_triggered = any(
             state == OrderState.FILLED
             for client_order_id, state in self._order_states.items()
-            if client_order_id != self._parent_id
+            if client_order_id not in (self._parent_id, self._exit_order_id)
         )
 
         if is_flat:
@@ -299,7 +287,7 @@ class OrderGroup:
                 return OrderGroupState.CANCELED
 
             if parent_state == OrderState.FILLED:
-                if legacy_orders_terminal and exit_order_terminal:
+                if bracket_orders_terminal and exit_order_terminal:
                     return OrderGroupState.COMPLETED
                 return OrderGroupState.CLOSING
 
