@@ -24,6 +24,22 @@ def test_clearing_ledger_initial_state() -> None:
 
 # -----------------------------------------------------------------------------
 
+def test_clearing_ledger_is_flat():
+    """Asserts that is_flat returns True only when physical position is exactly zero."""
+    ledger = ClearingLedger()
+    assert ledger.position_size == Decimal('0.0')
+    assert ledger.is_flat()
+
+    ledger.update_exposure(OrderSide.BUY, Decimal('1.0'), Decimal('1.0'))
+    assert ledger.position_size == Decimal('1.0')
+    assert not ledger.is_flat()
+
+    ledger.update_exposure(OrderSide.SELL, Decimal('1.0'), Decimal('1.0'))
+    assert ledger.position_size == Decimal('0.0')
+    assert ledger.is_flat()
+
+# -----------------------------------------------------------------------------
+
 @pytest.mark.parametrize(
     'side,quantity,price,expected_size',
     [

@@ -44,6 +44,12 @@ class ClearingLedger:
 
 # -----------------------------------------------------------------------------
 
+    def is_flat(self) -> bool:
+        """Determines if the physical position counter is completely net zero."""
+        return self.position_size == Decimal('0.0')
+
+# -----------------------------------------------------------------------------
+
     @property
     def realized_pnl(self) -> Decimal:
         """Retrieves the cumulative realized profit and loss."""
