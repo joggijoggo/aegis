@@ -378,8 +378,12 @@ class BacktraderBrokerAdapter(BaseBrokerAdapter):
 
             state = self._parse_order_status(raw_order.status)
 
+            # Backtraders can return negative size to indicate SELL side but
+            # OrderReceipt requires positive values.
+            abs_executed_size = abs(float(raw_order.executed.size))
+
             # Tight type mutation pipeline: float -> str -> Decimal
-            executed_size = Decimal(str(float(raw_order.executed.size)))
+            executed_size = Decimal(str(abs_executed_size))
             executed_price = Decimal(str(float(raw_order.executed.price)))
 
             # Instantiate a real domain record instead of a raw dictionary

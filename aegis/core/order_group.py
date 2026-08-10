@@ -360,7 +360,11 @@ class OrderGroup:
                 return OrderGroupState.CANCELED
 
             if parent_state == OrderState.FILLED:
-                if bracket_orders_terminal and exit_order_terminal:
+                if (
+                    bracket_orders_terminal
+                    and exit_order_terminal
+                    and self._clearing_closed
+                ):
                     return OrderGroupState.COMPLETED
                 return OrderGroupState.CLOSING
 

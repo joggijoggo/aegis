@@ -101,6 +101,12 @@ class OrderReceipt:
 
 # -----------------------------------------------------------------------------
 
+    def __post_init__(self):
+        if self.executed_quantity < Decimal('0'):
+            raise ValueError('executed_quantity cannot be negative')
+
+# -----------------------------------------------------------------------------
+
 @dataclass(frozen=True)
 class TradeReceipt:
     """Broker transaction clearing details mapping financial performance.

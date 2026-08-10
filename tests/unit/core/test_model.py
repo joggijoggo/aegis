@@ -25,6 +25,7 @@ from aegis.core.model import (
     TimeInForce,
 )
 from tests.testutil import (
+    create_order_receipt_factory,
     create_position_factory,
     create_position_ledger_snapshot_factory,
 )
@@ -123,6 +124,16 @@ def test_order_receipt_immutability() -> None:
 
     with pytest.raises(FrozenInstanceError):
         receipt.state = OrderState.FILLED  # type: ignore
+
+# -----------------------------------------------------------------------------
+
+def test_order_receipt_raises_value_error_on_negative_quantity() -> None:
+    """Verifies OrderReceipt raises ValueError when executed_quantity is negative."""
+    create_order_receipt_factory(executed_quantity=Decimal('0.0')) # ok
+    create_order_receipt_factory(executed_quantity=Decimal('1.0')) # ok
+
+    with pytest.raises(ValueError):
+        create_order_receipt_factory(executed_quantity=Decimal('-1.0'))
 
 # -----------------------------------------------------------------------------
 
