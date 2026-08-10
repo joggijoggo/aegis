@@ -53,7 +53,10 @@ class BacktraderMarketFeed(BaseMarketFeed):
         self._bridge.signal_engine_is_ready()
 
         if self._bridge.is_simulation_completed():
+            logger.info('Stopping market feed...')
             raise StopIteration
+
+        logger.debug('>>>>> WAITING INFRA THREAD')
 
         # ---------------------------------------------------------------------
         # During the very first cycle, Cerebro pre-populates the market queue
@@ -68,9 +71,12 @@ class BacktraderMarketFeed(BaseMarketFeed):
 
         raw_data = self._bridge.get_market_queue().get()
 
+        logger.debug('<<<<< BACK TO MAIN THREAD')
+
         # Intercept the infrastructure shutdown signal to gracefully halt
         # the execution loop before hitting the translation layer.
         if raw_data is None:
+            logger.info('Stopping market feed...')
             raise StopIteration
 
         return self._translate_to_market_context(raw_data)

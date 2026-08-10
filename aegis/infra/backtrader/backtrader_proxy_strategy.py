@@ -31,6 +31,8 @@ class BacktraderProxyStrategy(bt.Strategy):
         super().__init__(*args, **kwargs)
         self._bridge = self.p.bridge
 
+        logger.info('Proxy initialized')
+
 # -----------------------------------------------------------------------------
 
     def next(self) -> None:
@@ -61,14 +63,17 @@ class BacktraderProxyStrategy(bt.Strategy):
 
     def start(self) -> None:
         """Executes the framework startup hook and submits the instance reference."""
+        logger.info('Waiting engine is ready...')
         self._bridge.bind_strategy(self)
         # Freeze the infra thread until the engine is ready.
         self._bridge.wait_engine_is_ready()
+        logger.info('Engine ready, simulation start')
 
 # -----------------------------------------------------------------------------
 
     def stop(self) -> None:
         """Intercepts the framework teardown hook and signals the bridge."""
+        logger.info('Stopping simulation')
         self._bridge.stop_simulation()
 
         # Inject a poison pill into the market queue to instantly unblock

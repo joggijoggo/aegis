@@ -317,8 +317,16 @@ class BacktraderTestHarness:
         infra_target = self._create_infra_worker()
         domain_target = self._create_domain_worker()
 
-        self._infra_thread = threading.Thread(target=infra_target, daemon=True)
-        self._domain_thread = threading.Thread(target=domain_target, daemon=True)
+        self._infra_thread = threading.Thread(
+            target=infra_target,
+            daemon=True,
+            name='INFRA',
+        )
+        self._domain_thread = threading.Thread(
+            target=domain_target,
+            daemon=True,
+            name='MAIN',
+        )
 
         try:
             self._infra_thread.start()

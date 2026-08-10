@@ -20,6 +20,9 @@ testpaths = ["tests"]
 filterwarnings = [
     "error::pytest.PytestUnhandledThreadExceptionWarning"
 ]
+#log_cli_format = "%(asctime)s [%(levelname)s][%(threadName)s][%(name)s:%(lineno)s] %(message)s"
+log_cli_format = "%(asctime)s [%(levelname)8s][%(threadName)12s][%(module)30s] %(message)s"
+log_cli_date_format = "%Y-%m-%d %H:%M:%S"
 
 [tool.coverage.run]
 source = [

@@ -217,6 +217,12 @@ class OrderGroup:
             CorruptedOrderGroupError: when the order group state is corrupted.
             UntrackedOrderException: when the receipt order id does not belong to the group.
         """
+        logger.debug(
+            'Received order receipt "%s" (%s)',
+            order_receipt.state,
+            order_receipt.client_order_id,
+        )
+
         if self._is_corrupted:
             raise CorruptedOrderGroupError(
                 f'Action denied: order group "{self._parent_id}" is corrupted.'
@@ -277,6 +283,12 @@ class OrderGroup:
         Raises:
             CorruptedOrderGroupError: when the order group state is corrupted.
         """
+        logger.debug(
+            'Received trade receipt "%s" (group_id: %s)',
+            'TRADE_OPEN' if trade_receipt.is_open else 'TRADE_CLOSE',
+            trade_receipt.group_id,
+        )
+
         if self._is_corrupted:
             raise CorruptedOrderGroupError(
                 f'Action denied: order group "{self._parent_id}" is corrupted.'

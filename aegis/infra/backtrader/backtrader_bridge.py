@@ -59,6 +59,7 @@ class BacktraderBridge:
 
     def advance_time(self) -> None:
         """Signals the background execution loop to progress by a single increment."""
+        logger.debug('Advancing time')
         with self._cv:
             self._ready_to_advance = True
             self._cv.notify_all()
@@ -145,6 +146,8 @@ class BacktraderBridge:
             event_type: The core classification used to route the update.
             data: The raw infrastructure object under evaluation.
         """
+        logger.debug('Pushing event "%s"', event_type)
+
         if self._is_completed:
             return
 

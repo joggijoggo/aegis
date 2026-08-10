@@ -99,6 +99,7 @@ class ExecutionTracker:
 
         bot_id = self._order_id_to_bot_id[client_order_id]
         order_group = self._executions[bot_id]
+        prev_state = order_group.state
 
         if broker_event.event_type == EventType.ORDER_NOTIFICATION:
             assert isinstance(receipt, OrderReceipt)
@@ -106,6 +107,21 @@ class ExecutionTracker:
         elif broker_event.event_type == EventType.TRADE_NOTIFICATION:
             assert isinstance(receipt, TradeReceipt)
             order_group.notify_trade_change(receipt)
+
+        logger.debug(
+            'Order Group (%s) state: %s, position_size: %f',
+            client_order_id,
+            order_group.state,
+            order_group.ledger.position_size,
+        )
+
+        if prev_state != order_group.state:
+            logger.info(
+                'Order group went from "%s" to "%s" (%s)',
+                prev_state,
+                order_group.state,
+                client_order_id,
+            )
 
         if order_group.is_terminal():
             self._clear_execution_context(bot_id)
@@ -162,6 +178,8 @@ class ExecutionTracker:
             self._order_id_to_bot_id[bracket_order.client_order_id] = bot_id
 
         self._executions[bot_id] = order_group
+
+        logger.info('Order group registered (parent: %s)', order.client_order_id)
 
 # -----------------------------------------------------------------------------
 
