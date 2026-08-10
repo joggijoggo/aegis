@@ -358,7 +358,7 @@ class BacktraderBrokerAdapter(BaseBrokerAdapter):
         Returns:
             The translated broker event record containing validated decimal payloads.
         """
-        payload: OrderReceipt | TradeReceipt = {}
+        payload: OrderReceipt | TradeReceipt
 
         if event_type == EventType.ORDER_NOTIFICATION:
             raw_order: bt.Order = raw_data

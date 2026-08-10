@@ -16,7 +16,9 @@ from aegis.core.model import (
     BrokerEvent,
     EventType,
     Order,
+    OrderReceipt,
     OrderType,
+    TradeReceipt,
 )
 from aegis.core.order_group import OrderGroup
 
@@ -94,8 +96,10 @@ class ExecutionTracker:
         order_group = self._executions[bot_id]
 
         if broker_event.event_type == EventType.ORDER_NOTIFICATION:
+            assert isinstance(receipt, OrderReceipt)
             order_group.notify_order_change(receipt)
         elif broker_event.event_type == EventType.TRADE_NOTIFICATION:
+            assert isinstance(receipt, TradeReceipt)
             order_group.notify_trade_change(receipt)
 
         if order_group.is_terminal():

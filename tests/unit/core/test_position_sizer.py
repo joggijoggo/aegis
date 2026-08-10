@@ -209,6 +209,25 @@ def test_sizer_raises_not_implemented_error_for_neutral_alpha(currency_converter
             market_context=context,
         )
 
+# -----------------------------------------------------------------------------
+
+def test_sizer_raises_value_error_for_neutral_alpha(currency_converter) -> None:
+    """Ensure neutral alpha direction throw exception."""
+    sizer = PositionSizer(currency_converter=currency_converter)
+    spec = create_contract_specification_factory()
+    intent = ExposureIntent(alpha_direction=None,)
+    snapshot = create_account_snapshot_factory(currency='USD')
+    context = create_market_context_factory()
+
+    with pytest.raises(ValueError):
+        sizer.create_order(
+            exposure_intent=intent,
+            risk_percent=Decimal('0.01'),
+            contract_specification=spec,
+            account_snapshot=snapshot,
+            market_context=context,
+        )
+
 # =============================================================================
 # -----------------------------------------------------------------------------
 # =============================================================================

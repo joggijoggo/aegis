@@ -60,6 +60,9 @@ class PositionSizer:
             account_snapshot: Current financial state providing account balance.
             market_context: Current market price information.
         """
+        if exposure_intent.alpha_direction is None:
+            raise ValueError('Cannot create order with None alpha_direction')
+
         # 1. Determine execution side and entry price base with strict validation
         if exposure_intent.alpha_direction > Decimal('0'):
             side = OrderSide.BUY
