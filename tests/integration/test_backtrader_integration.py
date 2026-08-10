@@ -20,36 +20,47 @@ from tests.testutil.backtrader_harness import (
 # -----------------------------------------------------------------------------
 # =============================================================================
 
-class ActiveTestBot(TelemetryBot):
-    """Stateful test bot capturing telemetry while driving a single initial intent."""
+class MultiIntentTestBot(TelemetryBot):
+    """Stateful test bot capturing telemry while driving multiple intent."""
 
 # -----------------------------------------------------------------------------
 
-    def __init__(self, exposure_intent: ExposureIntent) -> None:
-        """Initializes the active testing instance with its single scheduled intent.
+    def __init__(self, exposure_intents: list[ExposureIntent]) -> None:
+        """Initializes the active testing instance with its scheduled intent.
 
         Args:
-            exposure_intent: The unique initial intent to emit at the very first step.
+            expore_intents: The intent to emit at each cycle (can be shorter
+                than the whole simulation to stay flat).
         """
         super().__init__()
-        self._exposure_intent = exposure_intent
+        self._exposure_intents = exposure_intents
 
 # -----------------------------------------------------------------------------
 
-    def _evaluate(self, market_context: MarketContext, historical_values: List[float]) -> ExposureIntent:
-        """Emits the unique target intent on the first tick cycle, then switches to passive holding.
+    def  _evaluate(
+        self,
+        market_context: MarketContext,
+        historical_values: List[float]
+    ) -> ExposureIntent:
+        """Emits the cycle target intent, then switches to passive holding.
 
         Args:
             market_context: The active market price and volume context point.
             historical_values: Trailing price array series.
 
         Returns:
-            The scheduled exposure intent at step 0, otherwise a neutral passive intent.
+            The scheduled exposure intent, otherwise a neutral passive intent.
         """
-        if len(self.history) == 0:
-            return self._exposure_intent
 
-        return ExposureIntent(alpha_direction=None, stop_loss_ticks=0.0, take_profit_ticks=0.0)
+        try:
+            return self._exposure_intents[len(self.history)]
+        except IndexError:
+            # Stay flat.
+            return ExposureIntent(
+                alpha_direction=None,
+                stop_loss_ticks=0.0,
+                take_profit_ticks=0.0,
+            )
 
 # =============================================================================
 # -----------------------------------------------------------------------------
@@ -86,7 +97,7 @@ def test_backtrader_integration_active_buy_and_hold() -> None:
     ]
 
     intent = ExposureIntent(alpha_direction=1.0, stop_loss_ticks=1000.0, take_profit_ticks=1000.0)
-    active_bot = ActiveTestBot(exposure_intent=intent)
+    active_bot = MultiIntentTestBot([intent])
     harness = BacktraderTestHarness(bot=active_bot, records=historical_prices, symbol="EURUSD")
     harness.execute_synchronized_run(timeout=2.0)
 
@@ -116,7 +127,7 @@ def test_backtrader_integration_bracket_delayed_stop_loss() -> None:
     intent = ExposureIntent(
         alpha_direction=1.0, stop_loss_ticks=150.0, take_profit_ticks=1000.0
     )
-    active_bot = ActiveTestBot(exposure_intent=intent)
+    active_bot = MultiIntentTestBot([intent])
     harness = BacktraderTestHarness(
         bot=active_bot, records=historical_prices, symbol="EURUSD"
     )
@@ -148,7 +159,7 @@ def test_backtrader_integration_bracket_delayed_take_profit() -> None:
     intent = ExposureIntent(
         alpha_direction=1.0, stop_loss_ticks=1000.0, take_profit_ticks=500.0
     )
-    active_bot = ActiveTestBot(exposure_intent=intent)
+    active_bot = MultiIntentTestBot([intent])
     harness = BacktraderTestHarness(
         bot=active_bot, records=historical_prices, symbol="EURUSD"
     )
