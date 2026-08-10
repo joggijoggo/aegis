@@ -15,7 +15,7 @@ dependencies = [
 
 [tool.pytest.ini_options]
 minversion = "7.0"
-addopts = "--cov=core --cov=strategies --cov=bots --cov=market_feeds --cov=broker_adapters --cov-report term-missing --cov-report html"
+addopts = "--cov=aegis --cov-report term-missing --cov-report html"
 testpaths = ["tests"]
 filterwarnings = [
     "error::pytest.PytestUnhandledThreadExceptionWarning"
@@ -23,11 +23,7 @@ filterwarnings = [
 
 [tool.coverage.run]
 source = [
-    "core",
-    "strategies",
-    "bots",
-    "market_feeds",
-    "broker_adapters"
+    "aegis",
 ]
 omit = [
     "tests/*",
@@ -45,3 +41,20 @@ exclude_lines = [
     "if __name__ == .__main__.:",
     "if TYPE_CHECKING:"
 ]
+
+[[tool.mypy.overrides]]
+module = "backtrader.*"
+ignore_missing_imports = true
+
+[tool.ruff]
+src = ["aegis"]
+
+[tool.ruff.lint]
+extend-select = ["I"]
+
+[tool.ruff.lint.isort]
+lines-after-imports = 1
+case-sensitive = false
+known-first-party = ["aegis", "tests"]
+from-first = true
+split-on-trailing-comma = true
