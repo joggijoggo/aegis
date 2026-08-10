@@ -8,11 +8,16 @@ from abc import (
     ABC,
     abstractmethod,
 )
+import logging
 
 from aegis.core.model import (
     ExposureIntent,
     MarketContext,
 )
+
+# -----------------------------------------------------------------------------
+
+logger = logging.getLogger(__name__)
 
 # =============================================================================
 # -----------------------------------------------------------------------------

@@ -5,6 +5,7 @@ evaluations, and routing risk-sized orders to the broker gateway.
 """
 
 from decimal import Decimal
+import logging
 
 from aegis.core.base_bot import BaseBot
 from aegis.core.base_broker_adapter import BaseBrokerAdapter
@@ -13,6 +14,10 @@ from aegis.core.caching import HistoricalBuffer
 from aegis.core.contract_registry import ContractRegistry
 from aegis.core.execution_tracker import ExecutionTracker
 from aegis.core.position_sizer import PositionSizer
+
+# -----------------------------------------------------------------------------
+
+logger = logging.getLogger(__name__)
 
 # =============================================================================
 # -----------------------------------------------------------------------------

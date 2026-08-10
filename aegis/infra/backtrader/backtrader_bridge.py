@@ -5,12 +5,17 @@ Orchestrates thread-safe execution synchronization between the core domain engin
 
 from queue import Queue
 from typing import Any
+import logging
 import threading
 
 import backtrader as bt
 
 from aegis.core.exception import AegisError
 from aegis.core.model import EventType
+
+# -----------------------------------------------------------------------------
+
+logger = logging.getLogger(__name__)
 
 # =============================================================================
 # -----------------------------------------------------------------------------

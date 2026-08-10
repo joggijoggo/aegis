@@ -4,6 +4,11 @@ Provides performance-optimized sliding window buffers for historical data.
 """
 
 from collections import deque
+import logging
+
+# -----------------------------------------------------------------------------
+
+logger = logging.getLogger(__name__)
 
 # =============================================================================
 # -----------------------------------------------------------------------------

@@ -5,8 +5,13 @@ currency denominations.
 """
 
 from decimal import Decimal
+import logging
 
 from aegis.core.exception import MissingExchangeRateError
+
+# -----------------------------------------------------------------------------
+
+logger = logging.getLogger(__name__)
 
 # =============================================================================
 # -----------------------------------------------------------------------------

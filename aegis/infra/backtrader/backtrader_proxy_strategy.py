@@ -3,9 +3,15 @@
 Provides the infrastructure strategy proxy that intercepts Backtrader lifecycle hooks.
 """
 
+import logging
+
 import backtrader as bt
 
 from aegis.core.model import EventType
+
+# -----------------------------------------------------------------------------
+
+logger = logging.getLogger(__name__)
 
 # =============================================================================
 # -----------------------------------------------------------------------------

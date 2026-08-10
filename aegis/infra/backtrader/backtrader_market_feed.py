@@ -4,6 +4,7 @@ Provides the market feed adapter that extracts and translates synchronized histo
 """
 
 from typing import Any
+import logging
 
 from aegis.core.base_market_feed import BaseMarketFeed
 from aegis.core.model import (
@@ -11,6 +12,10 @@ from aegis.core.model import (
     MarketPricePoint,
 )
 from aegis.infra.backtrader import BacktraderBridge
+
+# -----------------------------------------------------------------------------
+
+logger = logging.getLogger(__name__)
 
 # =============================================================================
 # -----------------------------------------------------------------------------

@@ -8,6 +8,7 @@ from typing import (
     Any,
     Tuple,
 )
+import logging
 
 import backtrader as bt
 
@@ -34,6 +35,10 @@ from aegis.core.model import (
     TradeReceipt,
 )
 from aegis.infra.backtrader import BacktraderBridge
+
+# -----------------------------------------------------------------------------
+
+logger = logging.getLogger(__name__)
 
 # =============================================================================
 # -----------------------------------------------------------------------------

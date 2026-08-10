@@ -4,6 +4,7 @@ Maintains structural integrity and execution alignment for contingent trading li
 """
 
 from decimal import Decimal
+import logging
 
 from aegis.core.clearing_ledger import ClearingLedger
 from aegis.core.exception import (
@@ -20,6 +21,10 @@ from aegis.core.model import (
     OrderState,
     TradeReceipt,
 )
+
+# -----------------------------------------------------------------------------
+
+logger = logging.getLogger(__name__)
 
 # =============================================================================
 # -----------------------------------------------------------------------------

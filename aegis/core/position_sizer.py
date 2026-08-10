@@ -8,6 +8,7 @@ from decimal import (
     ROUND_DOWN,
     Decimal,
 )
+import logging
 import uuid
 
 from aegis.core.currency_converter import CurrencyConverter
@@ -22,6 +23,10 @@ from aegis.core.model import (
     OrderType,
     TimeInForce,
 )
+
+# -----------------------------------------------------------------------------
+
+logger = logging.getLogger(__name__)
 
 # =============================================================================
 # -----------------------------------------------------------------------------

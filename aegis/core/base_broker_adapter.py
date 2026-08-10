@@ -8,6 +8,7 @@ from abc import (
     ABC,
     abstractmethod,
 )
+import logging
 
 from aegis.core.model import (
     AccountSnapshot,
@@ -16,6 +17,10 @@ from aegis.core.model import (
     Order,
     PositionLedgerSnapshot,
 )
+
+# -----------------------------------------------------------------------------
+
+logger = logging.getLogger(__name__)
 
 # =============================================================================
 # -----------------------------------------------------------------------------

@@ -5,8 +5,13 @@ and cumulative realized profit and loss independently from venue states.
 """
 
 from decimal import Decimal
+import logging
 
 from aegis.core.model import OrderSide
+
+# -----------------------------------------------------------------------------
+
+logger = logging.getLogger(__name__)
 
 # =============================================================================
 # -----------------------------------------------------------------------------

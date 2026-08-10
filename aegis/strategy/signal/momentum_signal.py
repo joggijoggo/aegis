@@ -3,9 +3,15 @@
 Evaluates dual moving average crossovers to output a normalized direction conviction.
 """
 
+import logging
+
 from aegis.core.exception import InsufficientHistoryError
 from aegis.strategy.indicator.simple_moving_average import SimpleMovingAverage
 from aegis.strategy.signal.base_signal import AbstractSignal
+
+# -----------------------------------------------------------------------------
+
+logger = logging.getLogger(__name__)
 
 # =============================================================================
 # -----------------------------------------------------------------------------

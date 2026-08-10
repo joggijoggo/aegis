@@ -4,6 +4,7 @@ Tracks active transaction groups to isolate individual bot market exposure.
 """
 
 from dataclasses import replace
+import logging
 
 from aegis.core.base_broker_adapter import BaseBrokerAdapter
 from aegis.core.exception import (
@@ -21,6 +22,10 @@ from aegis.core.model import (
     TradeReceipt,
 )
 from aegis.core.order_group import OrderGroup
+
+# -----------------------------------------------------------------------------
+
+logger = logging.getLogger(__name__)
 
 # =============================================================================
 # -----------------------------------------------------------------------------

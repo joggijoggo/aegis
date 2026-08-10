@@ -3,8 +3,14 @@
 Provides the mathematical calculation for rolling simple moving averages.
 """
 
+import logging
+
 from aegis.core.exception import InsufficientHistoryError
 from aegis.strategy.indicator.base_indicator import AbstractIndicator
+
+# -----------------------------------------------------------------------------
+
+logger = logging.getLogger(__name__)
 
 # =============================================================================
 # -----------------------------------------------------------------------------

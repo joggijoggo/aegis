@@ -6,8 +6,13 @@ market data updates.
 
 from abc import abstractmethod
 from collections.abc import Iterator
+import logging
 
 from aegis.core.model import MarketContext
+
+# -----------------------------------------------------------------------------
+
+logger = logging.getLogger(__name__)
 
 # =============================================================================
 # -----------------------------------------------------------------------------

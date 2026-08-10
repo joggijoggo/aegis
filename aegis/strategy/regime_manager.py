@@ -3,9 +3,14 @@
 Implements the quantitative analysis engine computing Hurst and Kaufman indices.
 """
 
+import logging
 import math
 
 from aegis.core.model import RegimeConfidenceVector
+
+# -----------------------------------------------------------------------------
+
+logger = logging.getLogger(__name__)
 
 # =============================================================================
 # -----------------------------------------------------------------------------

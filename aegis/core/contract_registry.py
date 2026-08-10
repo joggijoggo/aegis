@@ -4,8 +4,14 @@ Stores and distributes microstructural contract parameters for transaction
 sizing and prudential margin verification.
 """
 
+import logging
+
 from aegis.core.exception import ContractNotFoundError
 from aegis.core.model import ContractSpecification
+
+# -----------------------------------------------------------------------------
+
+logger = logging.getLogger(__name__)
 
 # =============================================================================
 # -----------------------------------------------------------------------------
