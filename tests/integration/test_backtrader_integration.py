@@ -7,11 +7,11 @@ leveraging the automated testing harness infrastructure.
 from datetime import datetime
 from typing import List
 
-from core.models import (
+from aegis.core.model import (
     ExposureIntent,
     MarketContext,
 )
-from tests.testutils.backtrader_harness import (
+from tests.testutil.backtrader_harness import (
     BacktraderTestHarness,
     TelemetryBot,
 )

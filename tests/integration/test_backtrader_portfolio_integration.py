@@ -10,11 +10,11 @@ from typing import List
 
 import backtrader as bt
 
-from core.models import (
+from aegis.core.model import (
     ExposureIntent,
     MarketContext,
 )
-from tests.testutils.backtrader_harness import (
+from tests.testutil.backtrader_harness import (
     BacktraderTestHarness,
     TelemetryBot,
 )
