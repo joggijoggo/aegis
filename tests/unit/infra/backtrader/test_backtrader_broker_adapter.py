@@ -496,7 +496,7 @@ def test_backtrader_broker_adapter_order_clearing_parsing() -> None:
 
     # Secure the nested executed attributes with explicit conversion values
     mock_order_filled.executed = MagicMock()
-    mock_order_filled.executed.size.__float__.return_value = 100.0
+    mock_order_filled.executed.size.__float__.return_value = -100.0
     mock_order_filled.executed.price.__float__.return_value = 1.1250
 
     event_filled = adapter._translate_to_broker_event(
@@ -510,7 +510,7 @@ def test_backtrader_broker_adapter_order_clearing_parsing() -> None:
     assert event_filled.payload.average_execution_price == Decimal('1.1250')
     assert event_filled.payload.broker_order_id == '42'
     assert event_filled.payload.client_order_id == 'AEGIS-101-SL'
-    assert event_filled.payload.executed_quantity == Decimal('100.0')
+    assert event_filled.payload.executed_quantity == Decimal('100.0') # must be positive
     assert event_filled.payload.group_id == 'AEGIS-101'
     assert event_filled.payload.reject_reason is None
     assert event_filled.payload.state == OrderState.FILLED
