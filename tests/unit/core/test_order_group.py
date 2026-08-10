@@ -791,8 +791,63 @@ def test_computed_state_returns_closing_when_awaiting_child_purges() -> None:
 
 # -----------------------------------------------------------------------------
 
-def test_computed_state_returns_completed_when_all_orders_terminal() -> None:
-    """Verify that a flat group with all orders terminal evaluates to COMPLETED."""
+def test_order_group_bug_returns_completed_without_clearing_notification() -> None:
+    """Verifies that state is not COMPLETED until all orderes are terminals
+    and clearing is closed."""
+    parent_order = create_order_factory(
+        client_order_id='ORD_PARENT',
+        side=OrderSide.BUY,
+    )
+
+    child_order = create_order_factory(
+        client_order_id='ORD_CHILD_SL',
+        side=OrderSide.SELL,
+    )
+
+    group = OrderGroup(
+        parent_id='ORD_PARENT',
+        orders=[parent_order, child_order],
+    )
+    assert group.state == OrderGroupState.PENDING
+
+    parent_receipt = OrderReceipt(
+        client_order_id='ORD_PARENT',
+        group_id='ORD_PARENT',
+        state=OrderState.FILLED,
+        executed_quantity=Decimal('10.0'),
+        average_execution_price=Decimal('100.0'),
+        broker_order_id='B_01',
+        reject_reason=None,
+    )
+    group.notify_order_change(parent_receipt)
+    assert group.state == OrderGroupState.ACTIVE
+
+    child_receipt = OrderReceipt(
+        client_order_id='ORD_CHILD_SL',
+        group_id='ORD_PARENT',
+        state=OrderState.FILLED,
+        executed_quantity=Decimal('10.0'),
+        average_execution_price=Decimal('100.0'),
+        broker_order_id='B_01',
+        reject_reason=None,
+    )
+
+    group.notify_order_change(child_receipt)
+    assert group.state == OrderGroupState.CLOSING
+
+    trade_receipt = create_trade_receipt_factory(
+        group_id='ORD_PARENT',
+        is_open=False,
+    )
+
+    group.notify_trade_change(trade_receipt)
+    assert group.state == OrderGroupState.COMPLETED
+
+# -----------------------------------------------------------------------------
+
+def test_computed_state_returns_closing_when_all_orders_terminal() -> None:
+    """Verify that a flat group with all orders terminal evaluates to CLOSING
+    when clearing flag is not set."""
     parent_order = create_order_factory(
         client_order_id='ORD_PARENT',
         side=OrderSide.BUY,
@@ -847,6 +902,14 @@ def test_computed_state_returns_completed_when_all_orders_terminal() -> None:
     )
     group.notify_order_change(child_receipt)
 
+    assert group.state == OrderGroupState.CLOSING
+
+    trade_receipt = create_trade_receipt_factory(
+        group_id='ORD_PARENT',
+        is_open=False,
+    )
+
+    group.notify_trade_change(trade_receipt)
     assert group.state == OrderGroupState.COMPLETED
 
 # -----------------------------------------------------------------------------
