@@ -45,6 +45,9 @@ exclude_lines = [
 [tool.ruff]
 src = ["aegis"]
 
+[tool.ruff.lint]
+extend-select = ["I"]
+
 [tool.ruff.lint.isort]
 lines-after-imports = 1
 case-sensitive = false

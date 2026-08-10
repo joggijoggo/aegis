@@ -29,11 +29,9 @@ from aegis.core.model import (
     TradeReceipt,
 )
 from aegis.infra.backtrader import (
+    AssetSymbolNotFoundError,
     BacktraderBridge,
     BacktraderBrokerAdapter,
-)
-from aegis.infra.backtrader import (
-    AssetSymbolNotFoundError,
     InvalidOrderQuantityError,
     InvalidProtectionPriceError,
 )
