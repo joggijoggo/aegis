@@ -84,6 +84,7 @@ class BacktraderBrokerAdapter(BaseBrokerAdapter):
         self._broker_queue = bridge.get_broker_queue()
         self._next_trade_id: int = 1 # Starts at 1 to avoid None clashing.
         self._trade_id_to_group_mapping: dict[int, str] = {}
+        self._order_id_to_parent_id: dict[str, str] = {}
 
 # -----------------------------------------------------------------------------
 
@@ -309,9 +310,12 @@ class BacktraderBrokerAdapter(BaseBrokerAdapter):
         has_tp = tp_price is not None
         has_children = has_sl or has_tp
 
+        parent_order_id = order.client_order_id
+        self._order_id_to_parent_id[parent_order_id] = parent_order_id # self-map
+
         # Capture and map the unique sequence anchor for the manual bracket cycle
         current_trade_id = self._next_trade_id
-        self._trade_id_to_group_mapping[current_trade_id] = order.client_order_id
+        self._trade_id_to_group_mapping[current_trade_id] = parent_order_id
         self._next_trade_id += 1
 
         parent = entry_op(
@@ -320,12 +324,15 @@ class BacktraderBrokerAdapter(BaseBrokerAdapter):
             exectype=bt.Order.Market,
             valid=None,
             transmit=not has_children,
-            client_order_id=order.client_order_id,
+            client_order_id=parent_order_id,
             tradeid=current_trade_id,
         )
 
         if has_sl:
             transmit_sl = not has_tp
+            sl_order_id = f'{parent_order_id}-SL'
+            self._order_id_to_parent_id[sl_order_id] = parent_order_id
+
             child_op(
                 data=data,
                 size=size,
@@ -334,11 +341,14 @@ class BacktraderBrokerAdapter(BaseBrokerAdapter):
                 valid=None,
                 parent=parent,
                 transmit=transmit_sl,
-                client_order_id=f"{order.client_order_id}-SL",
+                client_order_id=sl_order_id,
                 tradeid=current_trade_id,
             )
 
         if has_tp:
+            tp_order_id = f'{order.client_order_id}-TP'
+            self._order_id_to_parent_id[tp_order_id] = parent_order_id
+
             child_op(
                 data=data,
                 size=size,
@@ -347,7 +357,7 @@ class BacktraderBrokerAdapter(BaseBrokerAdapter):
                 valid=None,
                 parent=parent,
                 transmit=True,
-                client_order_id=f"{order.client_order_id}-TP",
+                client_order_id=tp_order_id,
                 tradeid=current_trade_id,
             )
 
@@ -370,11 +380,7 @@ class BacktraderBrokerAdapter(BaseBrokerAdapter):
 
             # Preserving the raw id to know exactly which child bracket is hit
             raw_client_id = raw_order.info['client_order_id']
-
-            # Extract and clean group_id from trailing bracket suffixes
-            group_id = raw_client_id
-            if group_id.endswith('-SL') or group_id.endswith('-TP'):
-                group_id = group_id[:-3]
+            parent_order_id = self._order_id_to_parent_id[raw_client_id]
 
             state = self._parse_order_status(raw_order.status)
 
@@ -392,7 +398,7 @@ class BacktraderBrokerAdapter(BaseBrokerAdapter):
                 broker_order_id=str(raw_order.ref),
                 client_order_id=raw_client_id,
                 executed_quantity=executed_size,
-                group_id=group_id,
+                group_id=parent_order_id,
                 reject_reason=None,
                 state=state,
             )
@@ -447,12 +453,19 @@ class BacktraderBrokerAdapter(BaseBrokerAdapter):
         """Close the market position associated with the given order.
 
         Args:
-            order: The parent order that initiated the position.
+            order: The exit order to close the position.
         """
         target_data = self._resolve_data_feed(order.symbol)
         position = self._bridge.strategy.positions.get(target_data)
 
         if position is not None and position.size != 0:
+            # FIXME: this will breaks once we have multiple exits (retry-on-rejected)
+            if not order.client_order_id.endswith('-XT'):
+                raise ValueError('Close order must have id ending with "-XT"')
+
+            parent_order_id = order.client_order_id[:-3]
+            self._order_id_to_parent_id[order.client_order_id] = parent_order_id
+
             self._bridge.strategy.close(
                 data=target_data,
                 client_order_id=order.client_order_id,

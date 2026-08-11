@@ -320,6 +320,29 @@ def test_backtrader_broker_adapter_close_position_raises_not_found_error() -> No
 
 # -----------------------------------------------------------------------------
 
+def test_backtrader_broker_adapter_close_position_raises_value_error() -> None:
+    mock_bridge = MagicMock()
+    adapter = BacktraderBrokerAdapter(bridge=mock_bridge)
+
+    mock_data_feed = MagicMock()
+    mock_data_feed._name = 'EURUSD'
+    mock_bridge.strategy.datas = [mock_data_feed]
+
+    mock_position = MagicMock()
+    mock_position.size = 10
+    mock_bridge.strategy.positions = {mock_data_feed: mock_position}
+
+    exit_order = create_order_factory(
+        client_order_id='ORD_123-XT2',
+        symbol='EURUSD',
+        side=OrderSide.SELL
+    )
+
+    with pytest.raises(ValueError):
+        adapter.close_position(exit_order)
+
+# -----------------------------------------------------------------------------
+
 def test_backtrader_broker_adapter_polling_fifo_flow_for_orders() -> None:
     """Verifies queue polling and structural unpacking for order events."""
     broker_queue: Queue = Queue()
@@ -330,10 +353,12 @@ def test_backtrader_broker_adapter_polling_fifo_flow_for_orders() -> None:
 
     assert adapter.has_pending_events() is False
 
+    client_order_id = 'ORDER-A'
+
     mock_order = MagicMock()
     mock_order.ref = 101
     mock_order.status = bt.Order.Completed
-    mock_order.info = { 'client_order_id': 'ORDER-A' }
+    mock_order.info = { 'client_order_id': client_order_id }
     mock_order.executed = MagicMock()
     mock_order.executed.size.__float__.return_value = 10.0
     mock_order.executed.price.__float__.return_value = 1.2000
@@ -341,12 +366,16 @@ def test_backtrader_broker_adapter_polling_fifo_flow_for_orders() -> None:
     broker_queue.put((EventType.ORDER_NOTIFICATION, mock_order))
     assert adapter.has_pending_events() is True
 
+    # Update internal tracking for the test
+    adapter._order_id_to_parent_id[client_order_id] = client_order_id
+
     event = adapter.poll_event()
     assert isinstance(event, BrokerEvent)
     assert event.event_type == EventType.ORDER_NOTIFICATION
-    assert event.payload.broker_order_id == '101'
-    assert event.payload.client_order_id == 'ORDER-A'
-    assert event.payload.executed_quantity == Decimal('10.0')
+    order_receipt: OrderReceipt = event.payload
+    assert order_receipt.broker_order_id == '101'
+    assert order_receipt.client_order_id == client_order_id
+    assert order_receipt.executed_quantity == Decimal('10.0')
     assert adapter.has_pending_events() is False
 
 # -----------------------------------------------------------------------------
@@ -488,11 +517,18 @@ def test_backtrader_broker_adapter_order_clearing_parsing() -> None:
     bridge_mock = MagicMock(spec=BacktraderBridge)
     adapter = BacktraderBrokerAdapter(bridge=bridge_mock)
 
+    parent_order_id = 'AEGIS-101'
+    client_order_id = 'AEGIS-101-SL'
+
+    # Inject order_id tracking
+    adapter._order_id_to_parent_id[parent_order_id] = parent_order_id
+    adapter._order_id_to_parent_id[client_order_id] = parent_order_id
+
     # 1. Test standard filled scenario with bracket suffix and structural mappings
     mock_order_filled = MagicMock()
     mock_order_filled.ref = 42
     mock_order_filled.status = bt.Order.Completed
-    mock_order_filled.info = { 'client_order_id': 'AEGIS-101-SL' }
+    mock_order_filled.info = { 'client_order_id': client_order_id }
 
     # Secure the nested executed attributes with explicit conversion values
     mock_order_filled.executed = MagicMock()
@@ -728,6 +764,8 @@ def test_backtrader_broker_adapter_unsupported_policies() -> None:
 
 def test_backtrader_broker_adapter_translation_extraction_fallback_bug() -> None:
     """Demonstrates the empty group_id bug when client_order_id resides in info."""
+    client_order_id = 'AEGIS-EXPECTED-GROUP-ID'
+
     class StubBacktraderExecutionRecord:
         """Manual deterministic structure replicating a raw Backtrader executed block."""
         def __init__(self) -> None:
@@ -741,10 +779,12 @@ def test_backtrader_broker_adapter_translation_extraction_fallback_bug() -> None
             self.ref: int = 1
             self.executed = StubBacktraderExecutionRecord()
             # Mirroring the real runtime metadata dictionary structure
-            self.info = {'client_order_id': 'AEGIS-EXPECTED-GROUP-ID'}
+            self.info = {'client_order_id': client_order_id}
 
     bridge_mock = MagicMock()
     adapter = BacktraderBrokerAdapter(bridge=bridge_mock)
+
+    adapter._order_id_to_parent_id[client_order_id] = client_order_id
 
     # Simulate an authentic Backtrader order structure
     raw_order = StubBacktraderOrder()
@@ -757,8 +797,8 @@ def test_backtrader_broker_adapter_translation_extraction_fallback_bug() -> None
 
     # Test that we extract the id from the `.info` instead of the raw order.
     receipt = event.payload
-    assert receipt.group_id == 'AEGIS-EXPECTED-GROUP-ID'
-    assert receipt.client_order_id == 'AEGIS-EXPECTED-GROUP-ID'
+    assert receipt.group_id == client_order_id
+    assert receipt.client_order_id == client_order_id
 
 # =============================================================================
 # -----------------------------------------------------------------------------
