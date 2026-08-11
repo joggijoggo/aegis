@@ -135,12 +135,6 @@ class AegisExecutionEngine:
                             account_snapshot=broker_snapshot.account,
                             market_context=market_context,
                         )
-                        logger.debug(
-                            'Order created: "%s" %s ("%s")',
-                            order.side,
-                            order.quantity,
-                            order.client_order_id,
-                        )
 
                         # Record the tracking container prior to infrastructure transmission.
                         self._tracker.register_order(bot_id=bot_id, order=order)

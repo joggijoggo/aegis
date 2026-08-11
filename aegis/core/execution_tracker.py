@@ -196,12 +196,16 @@ class ExecutionTracker:
                 f"execution group registered in memory."
             )
 
+        logger.info('Bot "%s" wants to terminate its execution', bot_id)
+
         order_group = self._executions[bot_id]
         parent_order = order_group.get_parent_order()
 
         if order_group.is_cancelable():
+            logger.debug('Canceling position (%s)', parent_order.client_order_id)
             broker_adapter.cancel_order(parent_order)
         elif order_group.is_closable():
+            logger.debug('Position is closable')
             exit_order = replace(
                 parent_order,
                 client_order_id=f'{parent_order.client_order_id}-XT',
@@ -219,6 +223,7 @@ class ExecutionTracker:
                 f"is already terminal but was not evicted from memory."
             )
         else:
+            logger.debug('Position is neither cancelable, nor closable')
             # Active asynchronous transitional phase (CLOSING, REJECTING).
             # Network commands are already processing. Do not touch RAM or network.
             pass

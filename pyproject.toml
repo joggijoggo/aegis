@@ -24,6 +24,10 @@ filterwarnings = [
 log_cli_format = "%(asctime)s [%(levelname)8s][%(threadName)12s][%(module)30s] %(message)s"
 log_cli_date_format = "%Y-%m-%d %H:%M:%S"
 
+# Only when test fails ("captured log")
+log_format = "%(levelname)-8s %(message)s"
+log_date_format = "%Y-%m-%d %H:%M:%S"
+
 [tool.coverage.run]
 source = [
     "aegis",

@@ -137,7 +137,7 @@ class PositionSizer:
         epoch_timestamp = int(execution_time.timestamp())
         client_order_id = f'AEGIS-{epoch_timestamp}-{uuid.uuid4()}'
 
-        return Order(
+        order = Order(
             client_order_id=client_order_id,
             timestamp=execution_time,
             symbol=contract_specification.symbol,
@@ -149,6 +149,16 @@ class PositionSizer:
             stop_loss_price=stop_loss_price,
             take_profit_price=take_profit_price,
         )
+
+        logger.debug(
+            'Order created: "%s" %s (SL: %f, TP: %f)',
+            order.side,
+            order.quantity,
+            order.stop_loss_price,
+            order.take_profit_price,
+        )
+
+        return order
 
 # =============================================================================
 # -----------------------------------------------------------------------------
