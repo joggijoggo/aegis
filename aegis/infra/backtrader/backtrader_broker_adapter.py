@@ -17,6 +17,7 @@ from aegis.core.exception import (
     AegisError,
     BrokerOrderNotFoundError,
     BrokerPositionNotFoundError,
+    UntrackedOrderException,
 )
 from aegis.core.model import (
     AccountSnapshot,
@@ -135,6 +136,26 @@ class BacktraderBrokerAdapter(BaseBrokerAdapter):
                 total_spot_acquisition_cost += abs_size * entry_price
 
         return total_locked_margin, total_spot_acquisition_cost
+
+# -----------------------------------------------------------------------------
+
+    def _find_trade_id(self, client_order_id: str) -> int:
+        """Retrieves the original internal trade id from any client_order_id."""
+        try:
+            parent_order_id = self._order_id_to_parent_id[client_order_id]
+        except KeyError as error:
+            raise UntrackedOrderException(
+                f'order {client_order_id} has no parent order linked',
+            ) from error
+
+        # Reverse look-up
+        for trade_id, order_id in self._trade_id_to_group_mapping.items():
+            if order_id == parent_order_id:
+                return trade_id
+
+        raise UntrackedOrderException(
+            f'Parent of {client_order_id} has no internal trade id tracking',
+        )
 
 # -----------------------------------------------------------------------------
 
@@ -460,16 +481,21 @@ class BacktraderBrokerAdapter(BaseBrokerAdapter):
 
         if position is not None and position.size != 0:
             # FIXME: this will breaks once we have multiple exits (retry-on-rejected)
+            # This should be a member of `Order` to avoid arbitrary string convention.
             if not order.client_order_id.endswith('-XT'):
                 raise ValueError('Close order must have id ending with "-XT"')
 
             parent_order_id = order.client_order_id[:-3]
             self._order_id_to_parent_id[order.client_order_id] = parent_order_id
 
+            trade_id = self._find_trade_id(order.client_order_id)
+
             self._bridge.strategy.close(
                 data=target_data,
                 client_order_id=order.client_order_id,
+                tradeid=trade_id,
             )
+
             return
 
         raise BrokerPositionNotFoundError(

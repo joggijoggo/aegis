@@ -13,6 +13,7 @@ import pytest
 from aegis.core.exception import (
     BrokerOrderNotFoundError,
     BrokerPositionNotFoundError,
+    UntrackedOrderException,
 )
 from aegis.core.model import (
     AccountSnapshot,
@@ -279,6 +280,16 @@ def test_backtrader_broker_adapter_close_position_nominal_success() -> None:
     mock_data_feed._name = 'EURUSD'
     mock_bridge.strategy.datas = [mock_data_feed]
 
+    parent_order = create_order_factory(
+        client_order_id='ORD_123',
+        symbol='EURUSD',
+        side=OrderSide.BUY,
+        time_in_force=TimeInForce.GTC,
+    )
+
+    # Parent order needs to be submitted to enable the tracking logic.
+    adapter.submit_order(parent_order)
+
     mock_position = MagicMock()
     mock_position.size = 10
     mock_bridge.strategy.positions = {mock_data_feed: mock_position}
@@ -286,7 +297,7 @@ def test_backtrader_broker_adapter_close_position_nominal_success() -> None:
     exit_order = create_order_factory(
         client_order_id='ORD_123-XT',
         symbol='EURUSD',
-        side=OrderSide.SELL
+        side=OrderSide.SELL,
     )
 
     with patch.object(mock_bridge.strategy, "close") as mock_close:
@@ -294,7 +305,8 @@ def test_backtrader_broker_adapter_close_position_nominal_success() -> None:
 
         mock_close.assert_called_once_with(
             data=mock_data_feed,
-            client_order_id='ORD_123-XT'
+            client_order_id='ORD_123-XT',
+            tradeid=1,
         )
 
 # -----------------------------------------------------------------------------
@@ -799,6 +811,29 @@ def test_backtrader_broker_adapter_translation_extraction_fallback_bug() -> None
     receipt = event.payload
     assert receipt.group_id == client_order_id
     assert receipt.client_order_id == client_order_id
+
+# -----------------------------------------------------------------------------
+
+def test_backtrader_broker_adapter_closing_unlinked_order_raises() -> None:
+    """Verify that closing order with unsubmitted parent raises error."""
+    bridge_mock = MagicMock()
+    mock_strategy = MagicMock()
+    mock_data = MagicMock(spec=bt.feed.DataBase)
+    mock_data._name = 'EURUSD'
+    mock_strategy.datas = [mock_data]
+    bridge_mock.strategy = mock_strategy
+
+    adapter = BacktraderBrokerAdapter(bridge=bridge_mock)
+    client_order_it = 'ORD-XT'
+
+    with pytest.raises(UntrackedOrderException, match='has no parent order linked'):
+        # This case is unreachable through public interface.
+        adapter._find_trade_id(client_order_it)
+
+    order = create_order_factory(symbol='EURUSD', client_order_id=client_order_it)
+
+    with pytest.raises(UntrackedOrderException, match='has no internal trade id tracking'):
+        adapter.close_position(order)
 
 # =============================================================================
 # -----------------------------------------------------------------------------
