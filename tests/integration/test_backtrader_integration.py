@@ -4,6 +4,7 @@ Executes end-to-end integration tests over synchronized multi-threaded environme
 leveraging the automated testing harness infrastructure.
 """
 
+from dataclasses import replace
 from datetime import datetime
 from typing import List
 
@@ -175,6 +176,51 @@ def test_backtrader_integration_bracket_delayed_take_profit() -> None:
 
     # Cycle # 2: Next bar high stretch hits the target line -> Liquidated back to flat
     assert len(active_bot.history[2].position_ledger.records) == 0
+
+# -----------------------------------------------------------------------------
+
+def test_backtrader_integration_early_exit() -> None:
+    """Verifies that execution honor bot early exit intent."""
+
+    historical_prices = [
+        [datetime(2026, 8, 1, 12, 0), 1.1200, 1.1250, 1.1150, 1.1200, 1000.0, 0.0],
+        [datetime(2026, 8, 1, 12, 1), 1.1200, 1.1250, 1.1150, 1.1200, 1000.0, 0.0],
+        [datetime(2026, 8, 1, 12, 2), 1.1200, 1.1250, 1.1150, 1.1200, 1000.0, 0.0],
+        [datetime(2026, 8, 1, 12, 3), 1.1200, 1.1250, 1.1150, 1.1200, 1000.0, 0.0],
+    ]
+
+    neutral_intent = ExposureIntent(
+        alpha_direction=None,
+        stop_loss_ticks=1000.0, # Large enough to not be triggered.
+        take_profit_ticks=2000.0, # Large enough to not be triggered.
+    )
+    intents = [
+        replace(neutral_intent, alpha_direction=1.0), # BUY
+        neutral_intent,
+        replace(neutral_intent, alpha_direction=0.0), # Close (early exit)
+        neutral_intent,
+    ]
+    bot = MultiIntentTestBot(intents)
+    harness = BacktraderTestHarness(
+        bot=bot,
+        records=historical_prices,
+        symbol='EURUSD',
+    )
+    harness.execute_synchronized_run(timeout=2.0)
+
+    assert len(bot.history) == 4
+
+    # Cycle #1: Entry order submitted, portfolio flat
+    assert len(bot.history[0].position_ledger.records) == 0
+
+    # Cycle #2: Bot is in position
+    assert len(bot.history[1].position_ledger.records) == 1
+
+    # Cycle #3: Bot emit early exit
+    assert len(bot.history[2].position_ledger.records) == 1
+
+    # Cycle #4: Bot is flat, early exit accepted
+    assert len(bot.history[3].position_ledger.records) == 0
 
 # -----------------------------------------------------------------------------
 
