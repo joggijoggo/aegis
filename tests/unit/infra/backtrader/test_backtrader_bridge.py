@@ -4,7 +4,10 @@ Validates thread-safe synchronization mechanics, event routing, and binding life
 """
 
 from queue import Queue
-from unittest.mock import MagicMock
+from unittest.mock import (
+    MagicMock,
+    patch,
+)
 import threading
 
 import backtrader as bt
@@ -153,6 +156,32 @@ def test_backtrader_bridge_thread_synchronization() -> None:
     bt_thread.join(timeout=0.1)
 
     assert execution_trace == ['bt_start', 'engine_processed', 'bt_released']
+
+# -----------------------------------------------------------------------------
+
+def test_backtrader_bridge_on_tick_callback_execution() -> None:
+    """Verifies that the progress bar callback triggers exactly once per market tick."""
+    mock_callback = MagicMock()
+    bridge = BacktraderBridge(on_tick_callback=mock_callback)
+
+    # Pre-seed conditions to avoid permanent multi-threaded conditional lock
+    bridge._ready_to_advance = True
+
+    # 1. Assert that a non-market event does not trigger the callback
+    bridge.submit_event(EventType.ORDER_NOTIFICATION, {'status': 'FILLED'})
+    mock_callback.assert_not_called()
+
+    # 2. Assert that a MARKET_TICK invokes the progress tracking callback
+    # We patch the condition wait mechanism to verify execution without hanging
+    with patch.object(bridge._cv, 'wait') as mock_wait:
+        # Simulate engine immediate release state to secure linear flow
+        def immediate_release(*args, **kwargs):
+            bridge._ready_to_advance = True
+
+        mock_wait.side_effect = immediate_release
+
+        bridge.submit_event(EventType.MARKET_TICK, 'test_tick_data')
+        mock_callback.assert_called_once()
 
 # =============================================================================
 # -----------------------------------------------------------------------------

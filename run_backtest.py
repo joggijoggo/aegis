@@ -13,6 +13,7 @@ from datetime import datetime
 from pathlib import Path
 
 import backtrader as bt
+from rich.progress import Progress
 
 from aegis.config.market_specs import (
     IBKR_SPECIFICATIONS,
@@ -135,6 +136,49 @@ def create_position_sizer(
 
 # -----------------------------------------------------------------------------
 
+def estimate_total_ticks(
+    csv_filepath: Path,
+    start_date: datetime | None = None,
+    end_date: datetime | None = None,
+) -> int:
+    """Estimates the exact total of row ticks matching temporal constraints.
+
+    Args:
+        csv_filepath: Path filesystem coordinate pointing to the data catalog.
+        start_date: Backtest simulation chronological start boundary.
+        end_date: Backtest simulation chronological termination boundary.
+
+    Returns:
+        The verified discrete counts of timeline entries inside the scope.
+    """
+    total_lines = 0
+
+    with csv_filepath.open('r') as f:
+        # Skip the layout header row automatically
+        next(f)
+        for line in f:
+            # Extract the ISO datetime string chunk from the first column
+            columns = line.split(',')
+            if not columns:
+                continue
+
+            try:
+                line_dt = datetime.strptime(columns[0], '%Y-%m-%d %H:%M:%S')
+            except ValueError:
+                continue
+
+            # Enforce chronological validation boundaries constraints
+            if start_date and line_dt < start_date:
+                continue
+            if end_date and line_dt > end_date:
+                continue
+
+            total_lines += 1
+
+    return total_lines
+
+# -----------------------------------------------------------------------------
+
 def valid_date(date_string: str) -> datetime:
     """Validates and parses incoming command line date strings.
 
@@ -212,6 +256,7 @@ def initialize_runner(
     start_date: datetime | None = None,
     end_date: datetime | None = None,
     initial_cash: float = 10000.0,
+    progress: Progress | None = None,
 ) -> BacktraderRunner:
     """Assembles framework requirements and initializes the runner lifecycle.
 
@@ -236,6 +281,12 @@ def initialize_runner(
         raise FileNotFoundError(
             f"Missing historical data catalog at path: '{csv_filepath}'"
         )
+
+    total_lines = estimate_total_ticks(
+        csv_filepath=csv_filepath,
+        start_date=start_date,
+        end_date=end_date,
+    )
 
     broker_specs = BROKER_SPEC_MAP[broker.upper()]
     if symbol_upper not in broker_specs:
@@ -275,37 +326,54 @@ def initialize_runner(
         broker_specs=broker_specs
     )
 
-    return BacktraderRunner(
+    progress_callback = None
+
+    if progress:
+        task_id = progress.add_task(
+            description=f'[cyan]Backtesting {symbol_upper}...',
+            total=total_lines,
+        )
+
+        progress_callback = lambda: progress.update(task_id, advance=1)
+
+    runner = BacktraderRunner(
         bot=bot,
         data_feed=data_feed,
         position_sizer=position_sizer,
         contract_specification=contract_spec,
         initial_cash=initial_cash,
         commission_scheme=commission_scheme,
+        progress_callback=progress_callback,
     )
+
+    return runner
 
 # -----------------------------------------------------------------------------
 
 def main() -> None:
     """Bootstrap root entrypoint orchestrating modular sequence logic."""
     logging.basicConfig(
-        level=logging.INFO,
+        level=logging.WARN,
         format='%(asctime)s [%(levelname)s] (%(threadName)s) %(message)s',
         force=True,
     )
 
     args = parse_arguments()
-    bot = PassiveBot()
 
-    runner = initialize_runner(
-        bot=bot,
-        symbol=args.symbol,
-        broker=args.broker,
-        start_date=args.start_date,
-        end_date=args.end_date,
-        initial_cash=args.initial_cash,
-    )
-    runner.run()
+    with Progress() as progress:
+        bot = PassiveBot()
+
+        runner = initialize_runner(
+            bot=bot,
+            symbol=args.symbol,
+            broker=args.broker,
+            start_date=args.start_date,
+            end_date=args.end_date,
+            initial_cash=args.initial_cash,
+            progress=progress,
+        )
+
+        runner.run()
 
 # =============================================================================
 # -----------------------------------------------------------------------------

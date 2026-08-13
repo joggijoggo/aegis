@@ -43,6 +43,7 @@ class BacktraderRunner:
         contract_specification: ContractSpecification,
         initial_cash: float = 10000.0,
         commission_scheme: bt.CommissionInfo | None = None,
+        progress_callback: Callable[[], None] | None = None,
     ):
         """Initializes and completely automates the unified infrastructure boilerplate.
 
@@ -53,10 +54,11 @@ class BacktraderRunner:
             contract_specification: Specifications detailing the target asset contract.
             initial_cash: Starting virtual capital balance. Defaults to 10000.0.
             commission_scheme: Optional commission and fee model configuration.
+            progress_callback: Callback to signal progress.
         """
         self._symbol = contract_specification.symbol
 
-        self._bridge: BacktraderBridge = BacktraderBridge()
+        self._bridge: BacktraderBridge = BacktraderBridge(on_tick_callback=progress_callback)
         self._market_feed = BacktraderMarketFeed(bridge=self._bridge)
         self._broker_adapter = BacktraderBrokerAdapter(bridge=self._bridge)
 

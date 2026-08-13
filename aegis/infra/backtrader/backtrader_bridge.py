@@ -4,7 +4,7 @@ Orchestrates thread-safe execution synchronization between the core domain engin
 """
 
 from queue import Queue
-from typing import Any
+from typing import Any, Callable
 import logging
 import threading
 
@@ -42,7 +42,7 @@ class BacktraderBridge:
 
 # -----------------------------------------------------------------------------
 
-    def __init__(self) -> None:
+    def __init__(self, on_tick_callback: Callable[[], None] | None = None) -> None:
         """Initializes the bridge synchronization queues and tracking states."""
         self._market_queue: Queue = Queue()
         self._broker_queue: Queue = Queue()
@@ -54,6 +54,8 @@ class BacktraderBridge:
 
         self._cv = threading.Condition()
         self._ready_to_advance = False
+
+        self._on_tick_callback = on_tick_callback # Used for progress bar.
 
 # -----------------------------------------------------------------------------
 
@@ -155,6 +157,9 @@ class BacktraderBridge:
             # Reset the state variable BEFORE locking or queueing
             with self._cv:
                 self._ready_to_advance = False
+
+            if self._on_tick_callback:
+                self._on_tick_callback()
 
             # Push to the queue OUTSIDE the lock to prevent re-entrant deadlocks
             self._market_queue.put(data)
