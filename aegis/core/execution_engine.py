@@ -156,6 +156,14 @@ class AegisExecutionEngine:
                     self._tracker.process_broker_event(broker_event)
                 logger.info('Broker events processed')
 
+                if len(buffer) < self._bot.warm_up_period:
+                    logger.info(
+                        'Engine warming up: (%d/%d) bars accumulated',
+                        len(buffer),
+                        self._bot.warm_up_period,
+                    )
+                    continue
+
                 logger.info('Evaluating bot...')
                 exposure_intent = self._bot.evaluate(
                     market_context=market_context,

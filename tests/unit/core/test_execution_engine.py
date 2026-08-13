@@ -100,7 +100,7 @@ def test_engine_cycle_executes_order_on_valid_intent(
         stop_loss_ticks=500.0,
         take_profit_ticks=1000.0,
     )
-    bot = FakeBot(exposure_intent=intent, warm_up=10)
+    bot = FakeBot(exposure_intent=intent, warm_up=1)
     broker = FakeBrokerAdapter()
 
     engine = AegisExecutionEngine(
@@ -136,7 +136,7 @@ def test_engine_cycle_handles_exit_with_active_execution(
 ) -> None:
     """Verify that an exit intent triggers termination when execution is active."""
     intent = ExposureIntent(alpha_direction=0.0)
-    bot = FakeBot(exposure_intent=intent, warm_up=10)
+    bot = FakeBot(exposure_intent=intent, warm_up=1)
     broker = FakeBrokerAdapter()
     engine = AegisExecutionEngine(
         bot=bot,
@@ -188,6 +188,55 @@ def test_engine_cycle_skips_processing_on_none_intent(
 
     assert len(broker.submitted_orders) == 0
     assert broker.snapshot_call_count == 1
+
+# -----------------------------------------------------------------------------
+
+def test_engine_cycle_skips_evaluation_during_warm_up_period(
+    contract_registry,
+    position_sizer,
+) -> None:
+    """Ensures that the bot evaluation is skipped until the historical buffer
+    accumulates enough prices to satisfy the warm-up period threshold.
+    """
+    # Configure the fake strategy bot with a lookback requirement of 3 bars
+    intent = ExposureIntent(alpha_direction=None)
+    bot = FakeBot(exposure_intent=intent, warm_up=3)
+
+    # Spy on the evaluate method execution count
+    bot.evaluate = MagicMock(return_value=intent)
+    broker = FakeBrokerAdapter()
+
+    engine = AegisExecutionEngine(
+        bot=bot,
+        broker_adapter=broker,
+        contract_registry=contract_registry,
+        position_sizer=position_sizer,
+    )
+
+    # Generate a feed sequence supplying exactly 4 consecutive data points
+    context_1 = create_market_context_factory(mid_price=1.0500)
+    context_2 = create_market_context_factory(mid_price=1.0510)
+    context_3 = create_market_context_factory(mid_price=1.0520)
+    context_4 = create_market_context_factory(mid_price=1.0515)
+
+    feed = FakeMarketFeed(
+        market_contexts=[context_1, context_2, context_3, context_4]
+    )
+
+    # Run the cycle processing loops
+    engine.run_execution_cycle(symbol=DEFAULT_SYMBOL, market_feed=feed)
+
+    # Validation: 4 ticks arrived.
+    # Ticks 1 (len=1) and 2 (len=2) are below threshold -> Skipped.
+    # Ticks 3 (len=3) and 4 (len=3) are valid -> Evaluated.
+    assert bot.evaluate.call_count == 2
+
+    # Ensure correct sequential array windows were dispatched to the bot
+    expected_calls = [
+        call(market_context=context_3, historical_values=[1.0500, 1.0510, 1.0520]),
+        call(market_context=context_4, historical_values=[1.0510, 1.0520, 1.0515]),
+    ]
+    bot.evaluate.assert_has_calls(expected_calls)
 
 # =============================================================================
 # -----------------------------------------------------------------------------
