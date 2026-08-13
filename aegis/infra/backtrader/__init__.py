@@ -27,3 +27,6 @@ from aegis.infra.backtrader.backtrader_market_feed import (
 from aegis.infra.backtrader.backtrader_proxy_strategy import (
     BacktraderProxyStrategy as BacktraderProxyStrategy,
 )
+from aegis.infra.backtrader.backtrader_runner import (
+    BacktraderRunner as BacktraderRunner,
+)
