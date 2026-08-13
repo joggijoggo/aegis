@@ -1,10 +1,8 @@
 import pytest
 
+from aegis.infra.backtrader import FutureFixedMarginScheme
 from tests.dependency.backtrader.bbroker_confrontation.data_feed import (
     run_isolated_cerebro,
-)
-from tests.dependency.backtrader.bbroker_confrontation.schemes import (
-    FutureFixedMarginScheme,
 )
 
 def test_bt_future_fixed_margin_behavior() -> None:
