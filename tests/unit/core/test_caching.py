@@ -58,6 +58,31 @@ def test_historical_buffer_validation_on_initialization() -> None:
     buffer = HistoricalBuffer(max_size=0)
     assert buffer.to_list() == []
 
+# -----------------------------------------------------------------------------
+
+def test_historical_buffer_length_tracking() -> None:
+    """Verifies that len() returns the exact count of active entries and
+    correctly caps at the maximum allocated capacity bounds.
+    """
+    # Initialize a buffer with a restricted sliding capacity
+    buffer = HistoricalBuffer(max_size=3)
+    assert len(buffer) == 0
+
+    # Append elements sequentially and verify the incremental sizing
+    buffer.append(10.5)
+    assert len(buffer) == 1
+
+    buffer.append(11.2)
+    assert len(buffer) == 2
+
+    buffer.append(11.8)
+    assert len(buffer) == 3
+
+    # Append an extra element to trigger the internal rolling eviction
+    # The size must remain locked to the maximum capacity ceiling parameter
+    buffer.append(12.1)
+    assert len(buffer) == 3
+
 # =============================================================================
 # -----------------------------------------------------------------------------
 # =============================================================================

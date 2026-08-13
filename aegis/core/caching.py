@@ -32,6 +32,16 @@ class HistoricalBuffer:
 
 # -----------------------------------------------------------------------------
 
+    def __len__(self) -> int:
+        """Returns the current number of elements stored in the buffer.
+
+        Returns:
+            The discrete count of active entries.
+        """
+        return len(self._buffer)
+
+# -----------------------------------------------------------------------------
+
     def append(self, value: float) -> None:
         """Appends a new value to the buffer.
 
