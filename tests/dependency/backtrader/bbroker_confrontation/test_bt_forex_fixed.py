@@ -1,10 +1,8 @@
 import pytest
 
+from aegis.infra.backtrader import ForexFixedMarginScheme
 from tests.dependency.backtrader.bbroker_confrontation.data_feed import (
     run_isolated_cerebro,
-)
-from tests.dependency.backtrader.bbroker_confrontation.schemes import (
-    ForexFixedMarginScheme,
 )
 
 def test_bt_forex_fixed_margin_behavior() -> None:

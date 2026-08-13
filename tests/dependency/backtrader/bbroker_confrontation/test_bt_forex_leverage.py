@@ -1,10 +1,8 @@
 import pytest
 
+from aegis.infra.backtrader import ForexDynamicLeverageScheme
 from tests.dependency.backtrader.bbroker_confrontation.data_feed import (
     run_isolated_cerebro,
-)
-from tests.dependency.backtrader.bbroker_confrontation.schemes import (
-    ForexDynamicLeverageScheme,
 )
 
 def test_bt_forex_dynamic_leverage_behavior() -> None:

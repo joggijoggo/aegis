@@ -13,7 +13,7 @@ from aegis.core.model import (
     MarketContext,
 )
 from tests.testutil.backtrader_harness import (
-    BacktraderTestHarness,
+    BacktraderTestRunner,
     TelemetryBot,
 )
 
@@ -99,8 +99,8 @@ def test_backtrader_integration_active_buy_and_hold() -> None:
 
     intent = ExposureIntent(alpha_direction=1.0, stop_loss_ticks=1000.0, take_profit_ticks=1000.0)
     active_bot = MultiIntentTestBot([intent])
-    harness = BacktraderTestHarness(bot=active_bot, records=historical_prices, symbol="EURUSD")
-    harness.execute_synchronized_run(timeout=2.0)
+    runner = BacktraderTestRunner(bot=active_bot, records=historical_prices, symbol='EURUSD')
+    runner.run(timeout=2.0)
 
     assert len(active_bot.history) == 3
 
@@ -129,10 +129,10 @@ def test_backtrader_integration_bracket_delayed_stop_loss() -> None:
         alpha_direction=1.0, stop_loss_ticks=150.0, take_profit_ticks=1000.0
     )
     active_bot = MultiIntentTestBot([intent])
-    harness = BacktraderTestHarness(
-        bot=active_bot, records=historical_prices, symbol="EURUSD"
+    runner = BacktraderTestRunner(
+        bot=active_bot, records=historical_prices, symbol='EURUSD'
     )
-    harness.execute_synchronized_run(timeout=2.0)
+    runner.run(timeout=2.0)
 
     assert len(active_bot.history) == 3
 
@@ -161,10 +161,10 @@ def test_backtrader_integration_bracket_delayed_take_profit() -> None:
         alpha_direction=1.0, stop_loss_ticks=1000.0, take_profit_ticks=500.0
     )
     active_bot = MultiIntentTestBot([intent])
-    harness = BacktraderTestHarness(
-        bot=active_bot, records=historical_prices, symbol="EURUSD"
+    runner = BacktraderTestRunner(
+        bot=active_bot, records=historical_prices, symbol='EURUSD'
     )
-    harness.execute_synchronized_run(timeout=2.0)
+    runner.run(timeout=2.0)
 
     assert len(active_bot.history) == 3
 
@@ -201,12 +201,12 @@ def test_backtrader_integration_early_exit() -> None:
         neutral_intent,
     ]
     bot = MultiIntentTestBot(intents)
-    harness = BacktraderTestHarness(
+    runner = BacktraderTestRunner(
         bot=bot,
         records=historical_prices,
         symbol='EURUSD',
     )
-    harness.execute_synchronized_run(timeout=2.0)
+    runner.run(timeout=2.0)
 
     assert len(bot.history) == 4
 
@@ -236,14 +236,14 @@ def test_backtrader_integration_passive_flow() -> None:
     ]
 
     passive_bot = TelemetryBot()
-    harness = BacktraderTestHarness(
+    runner = BacktraderTestRunner(
         bot=passive_bot,
         records=historical_prices,
-        symbol="EURUSD",
-        initial_cash=10000.0
+        symbol='EURUSD',
+        initial_cash=10000.0,
     )
 
-    harness.execute_synchronized_run(timeout=1.0)
+    runner.run(timeout=1.0)
 
     # High-precision metrology: Every captured historical record must remain perfectly neutral
     assert len(passive_bot.history) == 2

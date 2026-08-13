@@ -1,10 +1,8 @@
 import pytest
 
+from aegis.infra.backtrader import SpotStockCashScheme
 from tests.dependency.backtrader.bbroker_confrontation.data_feed import (
     run_isolated_cerebro,
-)
-from tests.dependency.backtrader.bbroker_confrontation.schemes import (
-    SpotStockCashScheme,
 )
 
 def test_bt_spot_stock_cash_behavior() -> None:

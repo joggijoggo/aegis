@@ -7,3 +7,6 @@ exclude_lines =
     if __name__ == .__main__.:
     pass
     @abstractmethod
+
+omit =
+    aegis/config/market_specs/*

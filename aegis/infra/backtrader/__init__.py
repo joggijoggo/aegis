@@ -27,3 +27,18 @@ from aegis.infra.backtrader.backtrader_market_feed import (
 from aegis.infra.backtrader.backtrader_proxy_strategy import (
     BacktraderProxyStrategy as BacktraderProxyStrategy,
 )
+from aegis.infra.backtrader.backtrader_runner import (
+    BacktraderRunner as BacktraderRunner,
+)
+from aegis.infra.backtrader.backtrader_schemes import (
+    ForexDynamicLeverageScheme as ForexDynamicLeverageScheme,
+)
+from aegis.infra.backtrader.backtrader_schemes import (
+    ForexFixedMarginScheme as ForexFixedMarginScheme,
+)
+from aegis.infra.backtrader.backtrader_schemes import (
+    FutureFixedMarginScheme as FutureFixedMarginScheme,
+)
+from aegis.infra.backtrader.backtrader_schemes import (
+    SpotStockCashScheme as SpotStockCashScheme,
+)

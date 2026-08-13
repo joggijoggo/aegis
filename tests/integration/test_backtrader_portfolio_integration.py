@@ -15,7 +15,7 @@ from aegis.core.model import (
     MarketContext,
 )
 from tests.testutil.backtrader_harness import (
-    BacktraderTestHarness,
+    BacktraderTestRunner,
     TelemetryBot,
 )
 
@@ -77,14 +77,14 @@ def test_portfolio_accounting_forex_dynamic_leverage() -> None:
         alpha_direction=1.0, stop_loss_ticks=1000.0, take_profit_ticks=20.0
     )
     active_bot = PortfolioActiveTestBot(exposure_intent=intent)
-    harness = BacktraderTestHarness(
+    runner = BacktraderTestRunner(
         bot=active_bot,
         records=historical_prices,
         symbol="EURUSD",
         initial_cash=10000.0,
         commission_scheme=ForexDynamicLeverageScheme(),
     )
-    harness.execute_synchronized_run(timeout=2.0)
+    runner.run(timeout=2.0)
 
     assert len(active_bot.history) == 3
 
@@ -130,14 +130,14 @@ def test_portfolio_accounting_forex_fixed_margin() -> None:
         alpha_direction=1.0, stop_loss_ticks=1000.0, take_profit_ticks=20.0
     )
     active_bot = PortfolioActiveTestBot(exposure_intent=intent)
-    harness = BacktraderTestHarness(
+    runner = BacktraderTestRunner(
         bot=active_bot,
         records=historical_prices,
         symbol="EURUSD",
         initial_cash=10000.0,
         commission_scheme=ForexFixedMarginScheme(),
     )
-    harness.execute_synchronized_run(timeout=2.0)
+    runner.run(timeout=2.0)
 
     assert len(active_bot.history) == 3
 
@@ -183,14 +183,14 @@ def test_portfolio_accounting_future_fixed_margin() -> None:
         alpha_direction=1.0, stop_loss_ticks=1000.0, take_profit_ticks=20.0
     )
     active_bot = PortfolioActiveTestBot(exposure_intent=intent)
-    harness = BacktraderTestHarness(
+    runner = BacktraderTestRunner(
         bot=active_bot,
         records=historical_prices,
         symbol="EURUSD",
         initial_cash=10000.0,
         commission_scheme=FutureFixedMarginScheme(),
     )
-    harness.execute_synchronized_run(timeout=2.0)
+    runner.run(timeout=2.0)
 
     assert len(active_bot.history) == 3
 
@@ -236,14 +236,14 @@ def test_portfolio_accounting_spot_stock_cash() -> None:
         alpha_direction=1.0, stop_loss_ticks=1000.0, take_profit_ticks=20.0
     )
     active_bot = PortfolioActiveTestBot(exposure_intent=intent)
-    harness = BacktraderTestHarness(
+    runner = BacktraderTestRunner(
         bot=active_bot,
         records=historical_prices,
         symbol="EURUSD",
         initial_cash=10000.0,
         commission_scheme=SpotStockCashScheme(),
     )
-    harness.execute_synchronized_run(timeout=2.0)
+    runner.run(timeout=2.0)
 
     assert len(active_bot.history) == 3
 
