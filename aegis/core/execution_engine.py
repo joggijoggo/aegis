@@ -13,6 +13,11 @@ from aegis.core.base_market_feed import BaseMarketFeed
 from aegis.core.caching import HistoricalBuffer
 from aegis.core.contract_registry import ContractRegistry
 from aegis.core.execution_tracker import ExecutionTracker
+from aegis.core.model import (
+    AccountSnapshot,
+    ExposureIntent,
+    MarketContext,
+)
 from aegis.core.position_sizer import PositionSizer
 
 # -----------------------------------------------------------------------------
@@ -50,6 +55,61 @@ class AegisExecutionEngine:
         self._risk_percent = Decimal('0.01')
         self._tracker = ExecutionTracker()
         self._buffers: dict[str, HistoricalBuffer] = {}
+
+# -----------------------------------------------------------------------------
+
+    def _process_exposure_intent(
+        self,
+        bot_id: str,
+        symbol: str,
+        exposure_intent: ExposureIntent,
+        account_snapshot: AccountSnapshot,
+        market_context: MarketContext,
+    ) -> None:
+        """Handles structural routing based on the bot evaluation intent.
+
+        Processes the generated exposure intent to coordinate order creation,
+        portfolio tracking registration, or order termination cycles.
+
+        Args:
+            bot_id: The unique tracking identifier assigned to the bot.
+            symbol: Target financial instrument identifier.
+            exposure_intent: The tactical directional decision from the bot.
+            account_snapshot: The frozen financial capital metrics snapshot.
+            market_context: Immutable record capturing the current market state.
+        """
+        if exposure_intent.is_flat():
+            pass # Nothing to do.
+        elif exposure_intent.is_exit():
+            if not self._tracker.has_active_execution(bot_id):
+                pass # Nothing to do.
+            else:
+                self._tracker.terminate_execution(
+                    bot_id=bot_id,
+                    broker_adapter=self._broker_adapter,
+                )
+        elif exposure_intent.is_entry():
+            if self._tracker.has_active_execution(bot_id):
+                pass # TODO: handle EDGING.
+            else:
+                contract_specification = (
+                    self._contract_registry.get_specification(symbol)
+                )
+
+                order = self._position_sizer.create_order(
+                    exposure_intent=exposure_intent,
+                    risk_percent=self._risk_percent,
+                    contract_specification=contract_specification,
+                    account_snapshot=account_snapshot,
+                    market_context=market_context,
+                )
+
+                # Record the tracking container prior to infrastructure transmission.
+                self._tracker.register_order(bot_id=bot_id, order=order)
+
+                logger.info('Submitting order "%s" ...', order.client_order_id)
+                self._broker_adapter.submit_order(order)
+                logger.info('Order submitted')
 
 # -----------------------------------------------------------------------------
 
@@ -110,39 +170,13 @@ class AegisExecutionEngine:
 
                 bot_id = 'BOT_ID' # TODO: Retrieve it from bot.
 
-                if exposure_intent.is_flat():
-                    pass # Nothing to do.
-                elif exposure_intent.is_exit():
-                    if not self._tracker.has_active_execution(bot_id):
-                        pass # Nothing to do.
-                    else:
-                        self._tracker.terminate_execution(
-                            bot_id=bot_id,
-                            broker_adapter=self._broker_adapter,
-                        )
-                elif exposure_intent.is_entry():
-                    if self._tracker.has_active_execution(bot_id):
-                        pass # TODO: handle EDGING.
-                    else:
-                        contract_specification = (
-                            self._contract_registry.get_specification(symbol)
-                        )
-
-                        order = self._position_sizer.create_order(
-                            exposure_intent=exposure_intent,
-                            risk_percent=self._risk_percent,
-                            contract_specification=contract_specification,
-                            account_snapshot=broker_snapshot.account,
-                            market_context=market_context,
-                        )
-
-                        # Record the tracking container prior to infrastructure transmission.
-                        self._tracker.register_order(bot_id=bot_id, order=order)
-
-                        logger.info('Submitting order "%s" ...', order.client_order_id)
-                        self._broker_adapter.submit_order(order)
-                        logger.info('Order submitted')
-
+                self._process_exposure_intent(
+                    bot_id=bot_id,
+                    symbol=symbol,
+                    exposure_intent=exposure_intent,
+                    account_snapshot=broker_snapshot.account,
+                    market_context=market_context,
+                )
         except StopIteration:
             logger.info('Cycle loop stopped')
 
