@@ -96,6 +96,11 @@ class PositionSizer:
             to_currency=account_snapshot.currency,
         )
 
+        # logger.debug('native_tick: %s', native_tick_value)
+        # logger.debug('account_tick: %s', account_tick_value)
+        # logger.debug('INTENT: %r', exposure_intent)
+        # logger.debug('SPECS: %r', contract_specification)
+
         # 3. Apply sizing equations mapping cash risk limits to tick distances
         max_risk_amount = account_snapshot.balance * risk_percent
         risk_per_contract = (
@@ -104,11 +109,17 @@ class PositionSizer:
         )
         raw_quantity = max_risk_amount / risk_per_contract
 
+        # logger.debug('max_risk_amount: %s', max_risk_amount)
+        # logger.debug('risk_per_contract: %s', risk_per_contract)
+        # logger.debug('raw_quantity: %s', raw_quantity)
+
         # 4. Enforce fractional discrete step routing boundaries
         step = contract_specification.contract_step
         quantized_quantity = (raw_quantity / step).quantize(
             Decimal('1'), rounding=ROUND_DOWN
         ) * step
+
+        # logger.debug('quantized_quantity: %s', quantized_quantity)
 
         if quantized_quantity < contract_specification.min_contract_size:
             raise ContractVolumeUnderflowError(
