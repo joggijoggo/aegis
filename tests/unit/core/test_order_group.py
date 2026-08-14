@@ -937,6 +937,63 @@ def test_computed_state_returns_rejected_on_parent_failure() -> None:
 
 # -----------------------------------------------------------------------------
 
+def test_computed_state_returns_rejected_when_child_are_terminals() -> None:
+    """Verify that a rejected parent entry order evaluates to REJECTED only
+    when children are also rejected."""
+    parent_order = create_order_factory(
+        client_order_id='ORD_PARENT',
+        side=OrderSide.BUY,
+    )
+    tp_order = create_order_factory(
+        client_order_id='ORD_TP',
+        side=OrderSide.SELL,
+    )
+    sl_order = create_order_factory(
+        client_order_id='ORD_SL',
+        side=OrderSide.SELL,
+    )
+
+    group = OrderGroup(parent_id='ORD_PARENT', orders=[parent_order, tp_order, sl_order])
+
+    receipt = OrderReceipt(
+        client_order_id='ORD_PARENT',
+        group_id='ORD_PARENT',
+        state=OrderState.REJECTED,
+        executed_quantity=Decimal('0.0'),
+        average_execution_price=None,
+        broker_order_id='B_01',
+        reject_reason='Margin insufficiency fault',
+    )
+    group.notify_order_change(receipt)
+
+    assert group.state == OrderGroupState.PENDING
+
+    receipt = OrderReceipt(
+        client_order_id='ORD_TP',
+        group_id='ORD_PARENT',
+        state=OrderState.REJECTED,
+        executed_quantity=Decimal('0.0'),
+        average_execution_price=None,
+        broker_order_id='B_01',
+        reject_reason='Margin insufficiency fault',
+    )
+    group.notify_order_change(receipt)
+
+    receipt = OrderReceipt(
+        client_order_id='ORD_SL',
+        group_id='ORD_PARENT',
+        state=OrderState.REJECTED,
+        executed_quantity=Decimal('0.0'),
+        average_execution_price=None,
+        broker_order_id='B_01',
+        reject_reason='Margin insufficiency fault',
+    )
+    group.notify_order_change(receipt)
+
+    assert group.state == OrderGroupState.REJECTED
+
+# -----------------------------------------------------------------------------
+
 def test_computed_state_returns_canceled_on_parent_abort() -> None:
     """Verify that a canceled parent entry order evaluates to CANCELED."""
     parent_order = create_order_factory(
@@ -953,6 +1010,63 @@ def test_computed_state_returns_canceled_on_parent_abort() -> None:
         average_execution_price=None,
         broker_order_id='B_01',
         reject_reason=None,
+    )
+    group.notify_order_change(receipt)
+
+    assert group.state == OrderGroupState.CANCELED
+
+# -----------------------------------------------------------------------------
+
+def test_computed_state_returns_canceled_when_child_are_terminals() -> None:
+    """Verify that a canceled parent entry order evaluates to CANCELED only
+    when children are also canceled."""
+    parent_order = create_order_factory(
+        client_order_id='ORD_PARENT',
+        side=OrderSide.BUY,
+    )
+    tp_order = create_order_factory(
+        client_order_id='ORD_TP',
+        side=OrderSide.SELL,
+    )
+    sl_order = create_order_factory(
+        client_order_id='ORD_SL',
+        side=OrderSide.SELL,
+    )
+
+    group = OrderGroup(parent_id='ORD_PARENT', orders=[parent_order, tp_order, sl_order])
+
+    receipt = OrderReceipt(
+        client_order_id='ORD_PARENT',
+        group_id='ORD_PARENT',
+        state=OrderState.CANCELED,
+        executed_quantity=Decimal('0.0'),
+        average_execution_price=None,
+        broker_order_id='B_01',
+        reject_reason='Canceled',
+    )
+    group.notify_order_change(receipt)
+
+    assert group.state == OrderGroupState.PENDING
+
+    receipt = OrderReceipt(
+        client_order_id='ORD_TP',
+        group_id='ORD_PARENT',
+        state=OrderState.CANCELED,
+        executed_quantity=Decimal('0.0'),
+        average_execution_price=None,
+        broker_order_id='B_01',
+        reject_reason='Canceled',
+    )
+    group.notify_order_change(receipt)
+
+    receipt = OrderReceipt(
+        client_order_id='ORD_SL',
+        group_id='ORD_PARENT',
+        state=OrderState.CANCELED,
+        executed_quantity=Decimal('0.0'),
+        average_execution_price=None,
+        broker_order_id='B_01',
+        reject_reason='Canceled',
     )
     group.notify_order_change(receipt)
 

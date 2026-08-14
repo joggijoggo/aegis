@@ -360,10 +360,10 @@ class OrderGroup(TelemetryEmitter):
         )
 
         if is_flat:
-            if parent_state == OrderState.REJECTED:
+            if parent_state == OrderState.REJECTED and bracket_orders_terminal:
                 return OrderGroupState.REJECTED
 
-            if parent_state == OrderState.CANCELED:
+            if parent_state == OrderState.CANCELED and bracket_orders_terminal:
                 return OrderGroupState.CANCELED
 
             if parent_state == OrderState.FILLED:
