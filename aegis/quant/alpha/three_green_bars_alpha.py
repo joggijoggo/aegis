@@ -3,8 +3,14 @@
 Extracts short-term buying conviction from three consecutive positive market candles.
 """
 
+import logging
+
 from aegis.core.base import BaseAlpha
 from aegis.core.model import MarketContext
+
+# -----------------------------------------------------------------------------
+
+logger = logging.getLogger(__name__)
 
 # =============================================================================
 # -----------------------------------------------------------------------------

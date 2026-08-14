@@ -3,10 +3,16 @@
 Evaluates market price interaction and crossovers against a simple moving average line.
 """
 
+import logging
+
 from aegis.core.base import BaseAlpha
 from aegis.core.exception import InsufficientHistoryError
 from aegis.core.model import MarketContext
 from aegis.quant.indicator import SimpleMovingAverage
+
+# -----------------------------------------------------------------------------
+
+logger = logging.getLogger(__name__)
 
 # =============================================================================
 # -----------------------------------------------------------------------------

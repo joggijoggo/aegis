@@ -4,6 +4,8 @@ Orchestrates sequential trade initiation and structural exit decisions using
 momentum and rolling moving average calculations.
 """
 
+import logging
+
 from aegis.core.base import BaseBot
 from aegis.core.model import (
     ExposureIntent,
@@ -13,6 +15,10 @@ from aegis.quant.alpha import (
     SmaExitAlpha,
     ThreeGreenBarsAlpha,
 )
+
+# -----------------------------------------------------------------------------
+
+logger = logging.getLogger(__name__)
 
 # =============================================================================
 # -----------------------------------------------------------------------------
