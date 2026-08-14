@@ -135,14 +135,17 @@ class PositionSizer:
         stop_loss_distance = (
             Decimal(str(exposure_intent.stop_loss_ticks)) * tick_size
         )
-        take_profit_distance = (
-            Decimal(str(exposure_intent.take_profit_ticks)) * tick_size
-        )
-
         stop_loss_price = entry_price + (stop_modifier * stop_loss_distance)
-        take_profit_price = (
-            entry_price + (profit_modifier * take_profit_distance)
-        )
+
+        if exposure_intent.take_profit_ticks is not None:
+            take_profit_distance = (
+                Decimal(str(exposure_intent.take_profit_ticks)) * tick_size
+            )
+            take_profit_price = (
+                entry_price + (profit_modifier * take_profit_distance)
+            )
+        else:
+            take_profit_price = None
 
         # 7. Generate a unique, deterministic internal tracking identifier
         epoch_timestamp = int(execution_time.timestamp())
@@ -162,11 +165,12 @@ class PositionSizer:
         )
 
         logger.debug(
-            'Order created: "%s" %s (SL: %f, TP: %f)',
+            'Order created: "%s" %s (price: %.5f, SL: %.5f, TP: %.5f)',
             order.side,
             order.quantity,
+            entry_price,
             order.stop_loss_price,
-            order.take_profit_price,
+            order.take_profit_price or 0.0,
         )
 
         return order

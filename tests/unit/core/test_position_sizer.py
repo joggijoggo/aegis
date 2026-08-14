@@ -55,6 +55,34 @@ def test_sizer_calculates_exact_volume_for_short_execution(currency_converter) -
 
 # -----------------------------------------------------------------------------
 
+def test_sizer_ignore_take_profit_when_none(currency_converter) -> None:
+    """Verifies that take_profit_price is None when exposure has no TP."""
+    sizer = PositionSizer(currency_converter=currency_converter)
+    spec = create_contract_specification_factory()
+    intent = ExposureIntent(
+        alpha_direction=Decimal('-1.0'),
+        stop_loss_ticks=500,
+        take_profit_ticks=None,
+    )
+    snapshot = create_account_snapshot_factory(currency='USD')
+    context = create_market_context_factory()
+
+    order = sizer.create_order(
+        exposure_intent=intent,
+        risk_percent=Decimal('0.01'),
+        contract_specification=spec,
+        account_snapshot=snapshot,
+        market_context=context,
+    )
+
+    assert order.symbol == 'EURUSD'
+    assert order.quantity == Decimal('0.20')
+    assert order.side == OrderSide.SELL
+    assert order.stop_loss_price == Decimal('1.08990')
+    assert order.take_profit_price is None
+
+# -----------------------------------------------------------------------------
+
 def test_sizer_calculates_exact_volume_on_native_currency_match(
     currency_converter,
 ) -> None:
