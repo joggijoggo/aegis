@@ -1,38 +1,39 @@
-"""Aegis Framework - Technical Indicators Abstract Port Interface.
+"""Aegis Framework - Base Alpha Model Contract.
 
-Enforces structural compile-time type validation across stateless data transformers.
+Defines the quantitative blueprint for extracting directional market convictions.
 """
 
 from abc import (
     ABC,
     abstractmethod,
 )
-import logging
 
-# -----------------------------------------------------------------------------
-
-logger = logging.getLogger(__name__)
+from aegis.core.model import MarketContext
 
 # =============================================================================
 # -----------------------------------------------------------------------------
 # =============================================================================
 
-class AbstractIndicator(ABC):
-    """Structural interface contract enforcing unified mathematical calculations."""
+class BaseAlpha(ABC):
+    """Abstract directional quantitative model."""
 
 # -----------------------------------------------------------------------------
 
     @abstractmethod
-    def calculate(self, values: list[float]) -> float:
-        """Computes the passive technical metrics over available data vectors.
+    def evaluate(
+        self,
+        market_context: MarketContext,
+        historical_values: list[float],
+    ) -> float:
+        """Evaluates the market to determine the directional conviction.
 
         Args:
-            values: A sequential list of numerical data points.
+            market_context: The current market state.
+            historical_values: Trailing price series.
 
         Returns:
-            The unique transformed scalar value.
+            The calculated directional conviction strength.
         """
-        pass
 
 # =============================================================================
 # -----------------------------------------------------------------------------

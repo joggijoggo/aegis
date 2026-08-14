@@ -79,6 +79,9 @@ from tests.testutil.factory import (
     create_trade_receipt_factory as create_trade_receipt_factory,
 )
 from tests.testutil.mock import (
+    FakeAlpha as FakeAlpha,
+)
+from tests.testutil.mock import (
     FakeBot as FakeBot,
 )
 from tests.testutil.mock import (

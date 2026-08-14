@@ -12,7 +12,7 @@ import logging
 
 import backtrader as bt
 
-from aegis.core.base_broker_adapter import BaseBrokerAdapter
+from aegis.core.base import BaseBrokerAdapter
 from aegis.core.exception import (
     AegisError,
     BrokerOrderNotFoundError,

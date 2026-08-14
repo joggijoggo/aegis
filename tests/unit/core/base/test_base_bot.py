@@ -6,7 +6,7 @@ subclass implementation requirements for system trading algorithms.
 
 import pytest
 
-from aegis.core.base_bot import BaseBot
+from aegis.core.base import BaseBot
 from aegis.core.model import (
     ExposureIntent,
     MarketContext,

@@ -2,9 +2,12 @@
 
 from queue import Queue
 
-from aegis.core.base_bot import BaseBot
-from aegis.core.base_broker_adapter import BaseBrokerAdapter
-from aegis.core.base_market_feed import BaseMarketFeed
+from aegis.core.base import (
+    BaseAlpha,
+    BaseBot,
+    BaseBrokerAdapter,
+    BaseMarketFeed,
+)
 from aegis.core.model import (
     AccountSnapshot,
     BrokerEvent,
@@ -22,6 +25,22 @@ from tests.testutil import (
     create_order_receipt_factory,
     create_position_ledger_snapshot_factory,
 )
+
+# =============================================================================
+# -----------------------------------------------------------------------------
+# =============================================================================
+
+class FakeAlpha(BaseAlpha):
+    """Fake Alpha signal"""
+
+# -----------------------------------------------------------------------------
+
+    def evaluate(
+        self,
+        market_context: MarketContext,
+        historical_values: list[float],
+    ) -> float:
+        return 1.0
 
 # =============================================================================
 # -----------------------------------------------------------------------------

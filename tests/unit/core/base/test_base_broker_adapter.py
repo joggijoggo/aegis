@@ -6,7 +6,7 @@ transaction routing protocols for external gateway adapters.
 
 import pytest
 
-from aegis.core.base_broker_adapter import BaseBrokerAdapter
+from aegis.core.base import BaseBrokerAdapter
 
 # =============================================================================
 # -----------------------------------------------------------------------------

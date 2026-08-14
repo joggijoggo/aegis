@@ -12,9 +12,11 @@ from typing import (
 
 import backtrader as bt
 
-from aegis.core.base_bot import BaseBot, ExposureIntent, MarketContext
+from aegis.core.base import BaseBot
 from aegis.core.model import (
     AccountSnapshot,
+    ExposureIntent,
+    MarketContext,
     PositionLedgerSnapshot,
 )
 from aegis.core.position_sizer import PositionSizer

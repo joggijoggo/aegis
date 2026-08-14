@@ -8,7 +8,7 @@ from datetime import datetime
 
 import pytest
 
-from aegis.core.base_market_feed import BaseMarketFeed
+from aegis.core.base import BaseMarketFeed
 from aegis.core.model import (
     MarketContext,
     MarketPricePoint,

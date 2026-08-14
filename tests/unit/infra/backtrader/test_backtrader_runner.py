@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 import backtrader as bt
 import pytest
 
-from aegis.core.base_bot import BaseBot
+from aegis.core.base import BaseBot
 from aegis.core.model import ContractSpecification
 from aegis.core.position_sizer import PositionSizer
 from aegis.infra.backtrader import BacktraderRunner
