@@ -66,8 +66,8 @@ class NaiveTrendBot(BaseBot):
         )
 
         if entry_signal >= 1.0:
-            take_profit_ticks = 400.0
-            stop_loss_ticks = 200.0 # FIXME: use atr
+            take_profit_ticks = 400
+            stop_loss_ticks = 200 # FIXME: use atr
 
             return ExposureIntent(
                 alpha_direction=1.0,

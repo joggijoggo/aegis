@@ -194,8 +194,8 @@ def test_sizer_raises_not_implemented_error_for_neutral_alpha(currency_converter
     spec = create_contract_specification_factory()
     intent = ExposureIntent(
         alpha_direction=Decimal('0.0'),
-        stop_loss_ticks=500,
-        take_profit_ticks=1000,
+        stop_loss_ticks=None,
+        take_profit_ticks=None,
     )
     snapshot = create_account_snapshot_factory(currency='USD')
     context = create_market_context_factory()

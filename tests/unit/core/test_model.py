@@ -218,8 +218,8 @@ def test_exposure_intent_none_signals_flat_state() -> None:
 
 def test_exposure_intent_non_zero_signals_active_entry() -> None:
     """Verify that any non-zero conviction scalar signals a market entry intent."""
-    intent_buy = ExposureIntent(alpha_direction=0.8)
-    intent_sell = ExposureIntent(alpha_direction=-0.5)
+    intent_buy = ExposureIntent(alpha_direction=0.8, stop_loss_ticks=10)
+    intent_sell = ExposureIntent(alpha_direction=-0.5, stop_loss_ticks=10)
 
     assert not intent_buy.is_flat()
     assert intent_buy.is_entry()
@@ -238,6 +238,37 @@ def test_exposure_intent_zero_signals_explicit_liquidation_exit() -> None:
     assert not intent.is_flat()
     assert not intent.is_entry()
     assert intent.is_exit()
+
+# -----------------------------------------------------------------------------
+
+def test_exposure_intent_raises_error_when_flat_or_exit_contains_brackets() -> None:
+    """Verifies exception when defensive ticks are provided to a non-entry."""
+    with pytest.raises(ValueError, match='must be None when FLAT/EXIT'):
+        ExposureIntent(alpha_direction=None, stop_loss_ticks=10)
+
+    with pytest.raises(ValueError, match='must be None when FLAT/EXIT'):
+        ExposureIntent(alpha_direction=None, take_profit_ticks=20)
+
+    with pytest.raises(ValueError, match='must be None when FLAT/EXIT'):
+        ExposureIntent(alpha_direction=0.0, stop_loss_ticks=10)
+
+    with pytest.raises(ValueError, match='must be None when FLAT/EXIT'):
+        ExposureIntent(alpha_direction=0.0, take_profit_ticks=10)
+
+# -----------------------------------------------------------------------------
+
+def test_exposure_intent_raises_error_on_invalid_entry_brackets() -> None:
+    """Verifies restriction boundaries upon direct trade initiation entries."""
+    # Line 48 coverage: stop_loss_ticks missing or zero for an entry signal
+    with pytest.raises(ValueError, match='must be strictly positive'):
+        ExposureIntent(alpha_direction=1.0, stop_loss_ticks=0)
+
+    with pytest.raises(ValueError, match='must be strictly positive'):
+        ExposureIntent(alpha_direction=1.0, stop_loss_ticks=None)
+
+    # Line 50 coverage: take_profit_ticks is negative or zero for an entry
+    with pytest.raises(ValueError, match='must either be None or strictly positive'):
+        ExposureIntent(alpha_direction=1.0, stop_loss_ticks=10, take_profit_ticks=0)
 
 # =============================================================================
 # -----------------------------------------------------------------------------

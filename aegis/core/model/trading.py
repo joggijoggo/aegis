@@ -32,8 +32,22 @@ class ExposureIntent:
         take_profit_ticks: The target take-profit distance measured in ticks.
     """
     alpha_direction: float | None = None
-    stop_loss_ticks: float = 0.0
-    take_profit_ticks: float = 0.0
+    stop_loss_ticks: int | None = None
+    take_profit_ticks: int | None = None
+
+    def __post_init__(self) -> None:
+        """Checks invariants."""
+        if self.is_flat() or self.is_exit():
+            if self.stop_loss_ticks is not None:
+                raise ValueError('stop_loss_ticks must be None when FLAT/EXIT')
+            if self.take_profit_ticks is not None:
+                raise ValueError('take_profit_ticks must be None when FLAT/EXIT')
+        else: # This is an entry signal.
+            # Entering trade without stop loss is not allowed.
+            if (self.stop_loss_ticks is None) or (self.stop_loss_ticks < 1):
+                raise ValueError('stop_loss_ticks must be strictly positive')
+            if (self.take_profit_ticks is not None) and (self.take_profit_ticks < 1):
+                raise ValueError('take_profit_ticks must either be None or strictly positive')
 
     def is_entry(self) -> bool:
         """Check if the intent signals a desire to enter or reverse a position."""

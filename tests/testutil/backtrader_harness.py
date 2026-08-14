@@ -127,7 +127,7 @@ class TelemetryBot(BaseBot):
             A neutral market exposure intent forcing a flat posture loop by default.
         """
         # Stay flat by default.
-        return ExposureIntent(alpha_direction=None, stop_loss_ticks=0.0, take_profit_ticks=0.0)
+        return ExposureIntent(alpha_direction=None, stop_loss_ticks=None, take_profit_ticks=None)
 
 # -----------------------------------------------------------------------------
 

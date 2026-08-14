@@ -204,7 +204,7 @@ class FakeStrategy(AbstractStrategy):
     ) -> None:
         """Initializes the fake strategy settings."""
         super().__init__(warm_up_period=warm_up_period)
-        self._exposure_intent = exposure_intent or ExposureIntent(1.0, 20.0)
+        self._exposure_intent = exposure_intent or ExposureIntent(1.0, 20)
 
 # -----------------------------------------------------------------------------
 

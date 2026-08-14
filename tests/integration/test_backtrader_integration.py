@@ -59,8 +59,8 @@ class MultiIntentTestBot(TelemetryBot):
             # Stay flat.
             return ExposureIntent(
                 alpha_direction=None,
-                stop_loss_ticks=0.0,
-                take_profit_ticks=0.0,
+                stop_loss_ticks=None,
+                take_profit_ticks=None,
             )
 
 # =============================================================================
@@ -97,7 +97,7 @@ def test_backtrader_integration_active_buy_and_hold() -> None:
         [datetime(2026, 8, 1, 12, 2), 1.1240, 1.1290, 1.1230, 1.1280, 6000.0, 0.0],
     ]
 
-    intent = ExposureIntent(alpha_direction=1.0, stop_loss_ticks=1000.0, take_profit_ticks=1000.0)
+    intent = ExposureIntent(alpha_direction=1.0, stop_loss_ticks=1000, take_profit_ticks=1000)
     active_bot = MultiIntentTestBot([intent])
     runner = BacktraderTestRunner(bot=active_bot, records=historical_prices, symbol='EURUSD')
     runner.run(timeout=2.0)
@@ -126,7 +126,7 @@ def test_backtrader_integration_bracket_delayed_stop_loss() -> None:
     ]
 
     intent = ExposureIntent(
-        alpha_direction=1.0, stop_loss_ticks=150.0, take_profit_ticks=1000.0
+        alpha_direction=1.0, stop_loss_ticks=150, take_profit_ticks=1000,
     )
     active_bot = MultiIntentTestBot([intent])
     runner = BacktraderTestRunner(
@@ -158,7 +158,7 @@ def test_backtrader_integration_bracket_delayed_take_profit() -> None:
     ]
 
     intent = ExposureIntent(
-        alpha_direction=1.0, stop_loss_ticks=1000.0, take_profit_ticks=500.0
+        alpha_direction=1.0, stop_loss_ticks=1000, take_profit_ticks=500,
     )
     active_bot = MultiIntentTestBot([intent])
     runner = BacktraderTestRunner(
@@ -191,11 +191,16 @@ def test_backtrader_integration_early_exit() -> None:
 
     neutral_intent = ExposureIntent(
         alpha_direction=None,
-        stop_loss_ticks=1000.0, # Large enough to not be triggered.
-        take_profit_ticks=2000.0, # Large enough to not be triggered.
+        stop_loss_ticks=None, # Large enough to not be triggered.
+        take_profit_ticks=None, # Large enough to not be triggered.
     )
     intents = [
-        replace(neutral_intent, alpha_direction=1.0), # BUY
+        replace(
+            neutral_intent,
+            alpha_direction=1.0, # BUY
+            stop_loss_ticks=1000,
+            take_profit_ticks=1000,
+        ),
         neutral_intent,
         replace(neutral_intent, alpha_direction=0.0), # Close (early exit)
         neutral_intent,

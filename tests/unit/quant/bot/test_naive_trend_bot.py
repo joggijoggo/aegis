@@ -40,8 +40,8 @@ def test_bot_triggers_long_entry_intent_on_clean_signal() -> None:
             intent = bot.evaluate(context, historical_trail)
 
     assert intent.alpha_direction == 1.0
-    assert intent.stop_loss_ticks > 0.0
-    assert intent.take_profit_ticks > 0.0 # FIXME: handle no TP
+    assert intent.stop_loss_ticks > 0
+    assert intent.take_profit_ticks > 0 # FIXME: handle no TP
 
 # -----------------------------------------------------------------------------
 

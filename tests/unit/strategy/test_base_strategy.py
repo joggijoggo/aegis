@@ -56,7 +56,7 @@ def test_base_strategy_raises_invalid_signal_error() -> None:
     historical_values = [1.0800] * 10
 
     # On injecte dynamiquement l'intention corrompue dans l'unique FakeStrategy
-    corrupted_intent = ExposureIntent(alpha_direction=1.5)
+    corrupted_intent = ExposureIntent(alpha_direction=1.5, stop_loss_ticks=10)
     strategy = FakeStrategy(exposure_intent=corrupted_intent, warm_up_period=5)
 
     with pytest.raises(InvalidSignalError):

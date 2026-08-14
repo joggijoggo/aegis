@@ -40,8 +40,8 @@ class PortfolioActiveTestBot(TelemetryBot):
 
         return ExposureIntent(
             alpha_direction=None,
-            stop_loss_ticks=self._exposure_intent.stop_loss_ticks,
-            take_profit_ticks=self._exposure_intent.take_profit_ticks,
+            stop_loss_ticks=None,
+            take_profit_ticks=None,
         )
 
 # =============================================================================
@@ -74,7 +74,7 @@ def test_portfolio_accounting_forex_dynamic_leverage() -> None:
     ]
 
     intent = ExposureIntent(
-        alpha_direction=1.0, stop_loss_ticks=1000.0, take_profit_ticks=20.0
+        alpha_direction=1.0, stop_loss_ticks=1000, take_profit_ticks=20,
     )
     active_bot = PortfolioActiveTestBot(exposure_intent=intent)
     runner = BacktraderTestRunner(
@@ -127,7 +127,7 @@ def test_portfolio_accounting_forex_fixed_margin() -> None:
     ]
 
     intent = ExposureIntent(
-        alpha_direction=1.0, stop_loss_ticks=1000.0, take_profit_ticks=20.0
+        alpha_direction=1.0, stop_loss_ticks=1000, take_profit_ticks=20
     )
     active_bot = PortfolioActiveTestBot(exposure_intent=intent)
     runner = BacktraderTestRunner(
@@ -180,7 +180,7 @@ def test_portfolio_accounting_future_fixed_margin() -> None:
     ]
 
     intent = ExposureIntent(
-        alpha_direction=1.0, stop_loss_ticks=1000.0, take_profit_ticks=20.0
+        alpha_direction=1.0, stop_loss_ticks=1000, take_profit_ticks=20,
     )
     active_bot = PortfolioActiveTestBot(exposure_intent=intent)
     runner = BacktraderTestRunner(
@@ -233,7 +233,7 @@ def test_portfolio_accounting_spot_stock_cash() -> None:
     ]
 
     intent = ExposureIntent(
-        alpha_direction=1.0, stop_loss_ticks=1000.0, take_profit_ticks=20.0
+        alpha_direction=1.0, stop_loss_ticks=1000, take_profit_ticks=20,
     )
     active_bot = PortfolioActiveTestBot(exposure_intent=intent)
     runner = BacktraderTestRunner(
