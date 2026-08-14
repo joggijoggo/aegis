@@ -6,7 +6,7 @@ Provides the market feed adapter that extracts and translates synchronized histo
 from typing import Any
 import logging
 
-from aegis.core.base_market_feed import BaseMarketFeed
+from aegis.core.base import BaseMarketFeed
 from aegis.core.model import (
     MarketContext,
     MarketPricePoint,

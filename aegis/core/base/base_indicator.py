@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 # -----------------------------------------------------------------------------
 # =============================================================================
 
-class AbstractIndicator(ABC):
+class BaseIndicator(ABC):
     """Structural interface contract enforcing unified mathematical calculations."""
 
 # -----------------------------------------------------------------------------

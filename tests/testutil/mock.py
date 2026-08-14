@@ -2,9 +2,11 @@
 
 from queue import Queue
 
-from aegis.core.base_bot import BaseBot
-from aegis.core.base_broker_adapter import BaseBrokerAdapter
-from aegis.core.base_market_feed import BaseMarketFeed
+from aegis.core.base import (
+    BaseBot,
+    BaseBrokerAdapter,
+    BaseMarketFeed,
+)
 from aegis.core.model import (
     AccountSnapshot,
     BrokerEvent,

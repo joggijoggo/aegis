@@ -6,7 +6,7 @@ Tracks active transaction groups to isolate individual bot market exposure.
 from dataclasses import replace
 import logging
 
-from aegis.core.base_broker_adapter import BaseBrokerAdapter
+from aegis.core.base import BaseBrokerAdapter
 from aegis.core.exception import (
     DanglingExecutionError,
     NettingRestrictionError,

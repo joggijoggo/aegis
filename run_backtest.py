@@ -20,7 +20,7 @@ from aegis.config.market_specs import (
     IG_MARKETS_SPECIFICATIONS,
     SAXO_BANK_SPECIFICATIONS,
 )
-from aegis.core.base_bot import BaseBot
+from aegis.core.base import BaseBot
 from aegis.core.currency_converter import CurrencyConverter
 from aegis.core.model import (
     ContractSpecification,

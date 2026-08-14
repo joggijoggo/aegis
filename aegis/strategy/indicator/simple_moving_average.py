@@ -5,8 +5,8 @@ Provides the mathematical calculation for rolling simple moving averages.
 
 import logging
 
+from aegis.core.base import BaseIndicator
 from aegis.core.exception import InsufficientHistoryError
-from aegis.strategy.indicator.base_indicator import AbstractIndicator
 
 # -----------------------------------------------------------------------------
 
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 # -----------------------------------------------------------------------------
 # =============================================================================
 
-class SimpleMovingAverage(AbstractIndicator):
+class SimpleMovingAverage(BaseIndicator):
     """Calculates the arithmetic mean of a rolling price window length."""
 
 # -----------------------------------------------------------------------------

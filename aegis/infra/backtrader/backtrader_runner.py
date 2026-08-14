@@ -10,7 +10,7 @@ import logging
 
 import backtrader as bt
 
-from aegis.core.base_bot import BaseBot
+from aegis.core.base import BaseBot
 from aegis.core.contract_registry import ContractRegistry
 from aegis.core.execution_engine import AegisExecutionEngine
 from aegis.core.model import ContractSpecification
