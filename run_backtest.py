@@ -28,6 +28,7 @@ from aegis.core.model import (
     MarketContext,
 )
 from aegis.core.position_sizer import PositionSizer
+from aegis.core.telemetry import SessionHistory
 from aegis.infra.backtrader import (
     BacktraderRunner,
     ForexDynamicLeverageScheme,
@@ -282,12 +283,6 @@ def initialize_runner(
             f"Missing historical data catalog at path: '{csv_filepath}'"
         )
 
-    total_lines = estimate_total_ticks(
-        csv_filepath=csv_filepath,
-        start_date=start_date,
-        end_date=end_date,
-    )
-
     broker_specs = BROKER_SPEC_MAP[broker.upper()]
     if symbol_upper not in broker_specs:
         raise ValueError(
@@ -326,16 +321,6 @@ def initialize_runner(
         broker_specs=broker_specs
     )
 
-    progress_callback = None
-
-    if progress:
-        task_id = progress.add_task(
-            description=f'[cyan]Backtesting {symbol_upper}...',
-            total=total_lines,
-        )
-
-        progress_callback = lambda: progress.update(task_id, advance=1)
-
     runner = BacktraderRunner(
         bot=bot,
         data_feed=data_feed,
@@ -343,8 +328,25 @@ def initialize_runner(
         contract_specification=contract_spec,
         initial_cash=initial_cash,
         commission_scheme=commission_scheme,
-        progress_callback=progress_callback,
     )
+
+    if progress:
+        total_lines = estimate_total_ticks(
+            csv_filepath=csv_filepath,
+            start_date=start_date,
+            end_date=end_date,
+        )
+
+        task_id = progress.add_task(
+            description=f'[cyan]Backtesting "{symbol_upper}"',
+            total=total_lines,
+        )
+
+        def update_bar(event: str):
+            if event == 'MARKET_TICK':
+                progress.update(task_id, advance=1)
+
+        runner.register_listener(update_bar)
 
     return runner
 
@@ -361,6 +363,7 @@ def main() -> None:
     args = parse_arguments()
 
     with Progress() as progress:
+        session_history = SessionHistory()
         bot = PassiveBot()
 
         runner = initialize_runner(
@@ -372,6 +375,8 @@ def main() -> None:
             initial_cash=args.initial_cash,
             progress=progress,
         )
+
+        runner._engine.register_listener(session_history.receive)
 
         runner.run()
 

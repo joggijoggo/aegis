@@ -19,6 +19,7 @@ from aegis.core.model import (
     MarketContext,
 )
 from aegis.core.position_sizer import PositionSizer
+from aegis.core.telemetry import TelemetryEmitter
 
 # -----------------------------------------------------------------------------
 
@@ -28,7 +29,7 @@ logger = logging.getLogger(__name__)
 # -----------------------------------------------------------------------------
 # =============================================================================
 
-class AegisExecutionEngine:
+class AegisExecutionEngine(TelemetryEmitter):
     """Core orchestrator synchronizing market data ingestion and trading logic."""
 
 # -----------------------------------------------------------------------------
@@ -48,6 +49,8 @@ class AegisExecutionEngine:
             contract_registry: Repository storing contract specifications.
             position_sizer: Component generating risk-sized execution orders.
         """
+        super().__init__()
+
         self._bot = bot
         self._broker_adapter = broker_adapter
         self._contract_registry = contract_registry
@@ -55,6 +58,8 @@ class AegisExecutionEngine:
         self._risk_percent = Decimal('0.01')
         self._tracker = ExecutionTracker()
         self._buffers: dict[str, HistoricalBuffer] = {}
+
+        self._tracker.register_listener(self.emit)
 
 # -----------------------------------------------------------------------------
 
@@ -148,6 +153,7 @@ class AegisExecutionEngine:
                 buffer.append(value=market_context.prices.mid_price)
 
                 broker_snapshot = self._broker_adapter.get_broker_snapshot()
+                self.emit(broker_snapshot.account)
 
                 # Flush and process asynchronous broker updates before market evaluation
                 logger.info('Processing broker events...')

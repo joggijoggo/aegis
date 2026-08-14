@@ -162,10 +162,11 @@ def test_backtrader_bridge_thread_synchronization() -> None:
 def test_backtrader_bridge_on_tick_callback_execution() -> None:
     """Verifies that the progress bar callback triggers exactly once per market tick."""
     mock_callback = MagicMock()
-    bridge = BacktraderBridge(on_tick_callback=mock_callback)
+    bridge = BacktraderBridge()
 
     # Pre-seed conditions to avoid permanent multi-threaded conditional lock
     bridge._ready_to_advance = True
+    bridge.emit = mock_callback
 
     # 1. Assert that a non-market event does not trigger the callback
     bridge.submit_event(EventType.ORDER_NOTIFICATION, {'status': 'FILLED'})
