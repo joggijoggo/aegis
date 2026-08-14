@@ -28,6 +28,7 @@ from aegis.core.model import (
     MarketContext,
 )
 from aegis.core.position_sizer import PositionSizer
+from aegis.core.telemetry import SessionHistory
 from aegis.infra.backtrader import (
     BacktraderRunner,
     ForexDynamicLeverageScheme,
@@ -361,6 +362,7 @@ def main() -> None:
     args = parse_arguments()
 
     with Progress() as progress:
+        session_history = SessionHistory()
         bot = PassiveBot()
 
         runner = initialize_runner(
@@ -372,6 +374,8 @@ def main() -> None:
             initial_cash=args.initial_cash,
             progress=progress,
         )
+
+        runner._engine.register_listener(session_history.receive)
 
         runner.run()
 
