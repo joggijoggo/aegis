@@ -6,7 +6,7 @@ Validates rolling arithmetic mean calculation accuracy and boundary safety limit
 import pytest
 
 from aegis.core.exception import InsufficientHistoryError
-from aegis.strategy.indicator.simple_moving_average import SimpleMovingAverage
+from aegis.quant.indicator import SimpleMovingAverage
 
 # =============================================================================
 # -----------------------------------------------------------------------------
