@@ -21,6 +21,7 @@ from aegis.core.model import (
     OrderState,
     TradeReceipt,
 )
+from aegis.core.telemetry import TelemetryEmitter
 
 # -----------------------------------------------------------------------------
 
@@ -30,7 +31,7 @@ logger = logging.getLogger(__name__)
 # -----------------------------------------------------------------------------
 # =============================================================================
 
-class OrderGroup:
+class OrderGroup(TelemetryEmitter):
     """Operational entity enforcing structural alignment over contingent orders."""
 
     # Anticipative state weight mapping to filter network packet ordering faults
@@ -55,6 +56,8 @@ class OrderGroup:
             parent_id: Unique internal identifier of the execution entry order.
             orders: Collection of all contingent orders belonging to this transaction.
         """
+        super().__init__()
+
         self._parent_id: str = parent_id
         self._exit_order_id: str | None = None
 
@@ -223,6 +226,8 @@ class OrderGroup:
             order_receipt.client_order_id,
         )
 
+        self.emit(order_receipt)
+
         if self._is_corrupted:
             raise CorruptedOrderGroupError(
                 f'Action denied: order group "{self._parent_id}" is corrupted.'
@@ -288,6 +293,8 @@ class OrderGroup:
             'TRADE_OPEN' if trade_receipt.is_open else 'TRADE_CLOSE',
             trade_receipt.group_id,
         )
+
+        self.emit(trade_receipt)
 
         if self._is_corrupted:
             raise CorruptedOrderGroupError(

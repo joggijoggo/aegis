@@ -22,6 +22,7 @@ from aegis.core.model import (
     TradeReceipt,
 )
 from aegis.core.order_group import OrderGroup
+from aegis.core.telemetry import TelemetryEmitter
 
 # -----------------------------------------------------------------------------
 
@@ -31,13 +32,15 @@ logger = logging.getLogger(__name__)
 # -----------------------------------------------------------------------------
 # =============================================================================
 
-class ExecutionTracker:
+class ExecutionTracker(TelemetryEmitter):
     """Memory ledger tracking active order groups indexed by bot identifier."""
 
 # -----------------------------------------------------------------------------
 
     def __init__(self) -> None:
         """Initialize an empty execution tracking ledger."""
+        super().__init__()
+
         self._executions: dict[str, OrderGroup] = {}
         self._order_id_to_bot_id: dict[str, str] = {}
 
@@ -177,6 +180,7 @@ class ExecutionTracker:
         for bracket_order in orders:
             self._order_id_to_bot_id[bracket_order.client_order_id] = bot_id
 
+        order_group.register_listener(self.emit)
         self._executions[bot_id] = order_group
 
         logger.info('Order group registered (parent: %s)', order.client_order_id)
