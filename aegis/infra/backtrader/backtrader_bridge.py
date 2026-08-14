@@ -4,7 +4,7 @@ Orchestrates thread-safe execution synchronization between the core domain engin
 """
 
 from queue import Queue
-from typing import Any, Callable
+from typing import Any
 import logging
 import threading
 
@@ -12,6 +12,7 @@ import backtrader as bt
 
 from aegis.core.exception import AegisError
 from aegis.core.model import EventType
+from aegis.core.telemetry import TelemetryEmitter
 
 # -----------------------------------------------------------------------------
 
@@ -33,7 +34,7 @@ class BridgeUnboundError(AegisError):
 # -----------------------------------------------------------------------------
 # =============================================================================
 
-class BacktraderBridge:
+class BacktraderBridge(TelemetryEmitter):
     """Synchronizes execution timing and dispatches events between Aegis and Backtrader.
 
     Provides a centralized interface to freeze simulation loops and route market ticks
@@ -42,8 +43,10 @@ class BacktraderBridge:
 
 # -----------------------------------------------------------------------------
 
-    def __init__(self, on_tick_callback: Callable[[], None] | None = None) -> None:
+    def __init__(self) -> None:
         """Initializes the bridge synchronization queues and tracking states."""
+        super().__init__()
+
         self._market_queue: Queue = Queue()
         self._broker_queue: Queue = Queue()
         self._lock = threading.RLock()  # Reentrant lock guarding concurrent execution boundaries
@@ -54,8 +57,6 @@ class BacktraderBridge:
 
         self._cv = threading.Condition()
         self._ready_to_advance = False
-
-        self._on_tick_callback = on_tick_callback # Used for progress bar.
 
 # -----------------------------------------------------------------------------
 
@@ -158,8 +159,7 @@ class BacktraderBridge:
             with self._cv:
                 self._ready_to_advance = False
 
-            if self._on_tick_callback:
-                self._on_tick_callback()
+            self.emit('MARKET_TICK')
 
             # Push to the queue OUTSIDE the lock to prevent re-entrant deadlocks
             self._market_queue.put(data)
