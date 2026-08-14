@@ -23,9 +23,11 @@ from aegis.config.market_specs import (
 from aegis.core.base import BaseBot
 from aegis.core.currency_converter import CurrencyConverter
 from aegis.core.model import (
+    AccountSnapshot,
     ContractSpecification,
     ExposureIntent,
     MarketContext,
+    TradeReceipt,
 )
 from aegis.core.position_sizer import PositionSizer
 from aegis.core.telemetry import SessionHistory
@@ -34,6 +36,7 @@ from aegis.infra.backtrader import (
     ForexDynamicLeverageScheme,
     FutureFixedMarginScheme,
 )
+from aegis.quant.bot import NaiveTrendBot
 
 # -----------------------------------------------------------------------------
 
@@ -356,6 +359,7 @@ def main() -> None:
     """Bootstrap root entrypoint orchestrating modular sequence logic."""
     logging.basicConfig(
         level=logging.WARN,
+        # level=logging.DEBUG,
         format='%(asctime)s [%(levelname)s] (%(threadName)s) %(message)s',
         force=True,
     )
@@ -364,7 +368,8 @@ def main() -> None:
 
     with Progress() as progress:
         session_history = SessionHistory()
-        bot = PassiveBot()
+        # bot = PassiveBot()
+        bot = NaiveTrendBot(sma_period=20)
 
         runner = initialize_runner(
             bot=bot,
@@ -379,6 +384,17 @@ def main() -> None:
         runner._engine.register_listener(session_history.receive)
 
         runner.run()
+
+        accounts = session_history.get_records(AccountSnapshot)
+        trades = session_history.get_records(TradeReceipt)
+
+        start_balance = float(accounts[0].balance)
+        end_balance = float(accounts[-1].balance)
+        return_prct = (100.0 * (end_balance - start_balance) / start_balance)
+        print(f'Start Balance:\t{start_balance:.2f} $')
+        print(f'End Balance:\t{end_balance:.2f} $')
+        print(f'Return:\t\t{return_prct:.4f} %')
+        print(f'# trades: {len([t for t in trades if not t.is_open])}')
 
 # =============================================================================
 # -----------------------------------------------------------------------------
